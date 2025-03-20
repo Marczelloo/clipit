@@ -1,0 +1,130 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+    provider = "prisma-client-js"
+}
+
+datasource db {
+    provider = "postgresql"
+    url      = env("DATABASE_URL")
+}
+
+// Necessary for Next auth
+model Account {
+    id                       String  @id @default(cuid())
+    userId                   String
+    type                     String
+    provider                 String
+    providerAccountId        String
+    refresh_token            String? // @db.Text
+    access_token             String? // @db.Text
+    expires_at               Int?
+    token_type               String?
+    scope                    String?
+    id_token                 String? // @db.Text
+    session_state            String?
+    user                     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+    refresh_token_expires_in Int?
+
+    @@unique([provider, providerAccountId])
+}
+
+model Session {
+    id           String   @id @default(cuid())
+    sessionToken String   @unique
+    userId       String
+    expires      DateTime
+    user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+    id            String    @id @default(cuid())
+    name          String?
+    email         String?   @unique
+    emailVerified DateTime?
+    image         String?
+    discordId     String?   @unique
+    accounts      Account[]
+    sessions      Session[]
+    clips         Clip[]
+    servers       UserServer[]
+}
+
+model VerificationToken {
+    identifier String
+    token      String   @unique
+    expires    DateTime
+
+    @@unique([identifier, token])
+}
+
+// ClipIt app models
+model DiscordServer {
+    id             String    @id
+    name           String
+    image          String?
+    users          UserServer[]
+    clips          Clip[]
+}
+
+model UserServer {
+    user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+    userId         String
+    server         DiscordServer  @relation(fields: [serverId], references: [id], onDelete: Cascade)
+    serverId       String
+
+    @@id([userId, serverId])
+}
+
+model Clip {
+    id             String        @id @default(cuid())
+    title          String
+    description    String?
+    fileUrl        String
+    thumbnailUrl   String?
+    createdAt      DateTime      @default(now())
+    updatedAt      DateTime      @updatedAt
+    fileSize       Int?          // in bytes
+    duration       Int?          // in seconds
+    originalName   String?
+    format         String?       // mp4, webm, etc.
+    
+    // Processing metadata
+    compressionSettings  CompressionSettings?
+    cutSettings          CutSettings?
+    
+    // Relations
+    userId         String
+    user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+    serverId       String
+    server         DiscordServer  @relation(fields: [serverId], references: [id], onDelete: Cascade)
+    
+    // Indexes for faster querying
+    @@index([userId, createdAt])
+    @@index([serverId, createdAt])
+}
+
+model CompressionSettings {
+    id             String    @id @default(cuid())
+    clipId         String    @unique
+    clip           Clip      @relation(fields: [clipId], references: [id], onDelete: Cascade)
+    
+    targetFileSize Int?      // in bytes
+    compressionLevel Int?    // 1-10 scale or similar
+    frameRate      Int?      // frames per second
+    resolution     String?   // e.g. "1920x1080"
+    codec          String?   // e.g. "h264"
+    bitrateVideo   Int?      // in kbps
+    bitrateAudio   Int?      // in kbps
+}
+
+model CutSettings {
+    id             String    @id @default(cuid())
+    clipId         String    @unique
+    clip           Clip      @relation(fields: [clipId], references: [id], onDelete: Cascade)
+    
+    startTime      Float     // in seconds
+    endTime        Float     // in seconds
+    originalDuration Float?  // in seconds
+}
