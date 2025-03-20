@@ -30,18 +30,10 @@ import { Label } from "~/components/ui/label";
 import { useToast } from "~/hooks/use-toast";
 import { formatBytes } from "~/lib/utils";
 
-// Add this to your utils.ts file or inline it here
-// export function formatBytes(bytes: number, decimals = 2): string {
-//   if (bytes === 0) return '0 Bytes';
-//   const k = 1024;
-//   const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-//   const i = Math.floor(Math.log(bytes) / Math.log(k));
-//   return parseFloat((bytes / Math.pow(k, i)).toFixed(decimals)) + ' ' + sizes[i];
-// }
-
 export default function CompressPage() {
   const [video, setVideo] = useState<File | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [compressedUrl, setCompressedUrl] = useState<string | null>(null); // Add this line
   const [isProcessing, setIsProcessing] = useState(false);
   const [compressionMode, setCompressionMode] = useState<"quality" | "size">("quality");
   const [quality, setQuality] = useState(75);
@@ -52,6 +44,9 @@ export default function CompressPage() {
   const [originalFps, setOriginalFps] = useState<number | null>(null);
   const [originalSize, setOriginalSize] = useState<number>(0);
   const [bitrateMultiplier, setBitrateMultiplier] = useState(1);
+  const [progress, setProgress] = useState(0);
+
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const { toast } = useToast();
 
@@ -108,17 +103,57 @@ export default function CompressPage() {
     }
   };
 
-  const handleCompress = () => {
+  const handleCompress = async () => {
+    if(!video) return;
+
     setIsProcessing(true);
-    
-    // Simulate processing delay - this would be replaced with actual processing
-    setTimeout(() => {
-      setIsProcessing(false);
+
+    try
+    {
+      const formData = new FormData();
+      formData.append("file", video);
+      formData.append("quality", quality.toString());
+      formData.append("format", format);
+      formData.append("resolution", resolution);
+      formData.append("fps", fps);
+
+      const response = await fetch("/api/compress", {
+        method: "POST",
+        body: formData,
+      })
+
+      if(!response.ok) throw new Error("Compression failed");
+
+      const result = await response.json();
+
+      if(result.success)
+      {
+        setCompressedUrl(result.fileUrl);
+
+        toast({
+          title: "Video compressed successfully",
+          description: `Reduced by ${result.compressionRatio}% (${formatBytes(result.originalSize)} → ${formatBytes(result.compressedSize)})`,
+        })
+      }
+      else
+      {
+        throw new Error(result.error || "Compression failed");
+      }
+      
+    }
+    catch(error)
+    {
+      console.error("Compression error: ", error);
       toast({
-        title: "Video compressed successfully",
-        description: "Your video has been compressed and is ready to download.",
-      });
-    }, 2000);
+        title: "Compression failed",
+        description: "An error occurred while compressing your video.",
+        variant: "destructive",
+      })
+    }
+    finally
+    {
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -165,7 +200,14 @@ export default function CompressPage() {
               onLoadedMetadata={handleVideoLoad}
             />
           </div>
-
+          {isProcessing && (
+            <div className="w-full bg-muted rounded-full h-2 mt-4">
+              <div
+                className="bg-primary h-2 rounded-full transition-all duration-300"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+          )}
           <Tabs defaultValue="compression" className="w-full">
             <TabsList className="grid grid-cols-3 mb-4">
               <TabsTrigger value="compression">
@@ -389,7 +431,21 @@ export default function CompressPage() {
                 </>
               )}
             </Button>
-            <Button variant="secondary" disabled={!isProcessing}>
+            <Button 
+              variant="secondary" 
+              disabled={!compressedUrl}
+              onClick={() => {
+                if (!compressedUrl) return;
+                
+                // Create an anchor element to force download
+                const a = document.createElement('a');
+                a.href = compressedUrl;
+                a.download = `compressed_${video?.name || 'video'}`; // Set filename
+                document.body.appendChild(a);
+                a.click(); // Trigger download
+                document.body.removeChild(a); // Clean up
+              }}
+            >
               <Download className="h-4 w-4 mr-2" /> Download
             </Button>
           </div>
