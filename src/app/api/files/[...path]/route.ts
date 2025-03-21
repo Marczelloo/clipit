@@ -7,7 +7,10 @@ import storageConfig from '~/server/config/storage';
 export async function GET(request: NextRequest, { params }: { params: { path: string[] } }) 
 {
     const session = await auth();
-    if(!session?.user) return NextResponse.json({ error: "Unauthorized"}, { status: 401 });
+
+    const isAnonymousFile = params.path[0] === "compressed" && params.path[1] === "anonymous";
+
+    if(!session?.user  && !isAnonymousFile) return NextResponse.json({ error: "Unauthorized"}, { status: 401 });
 
     // The params object must be directly deconstructed from the function parameters
     // and not further deconstructed in the function body to avoid the error

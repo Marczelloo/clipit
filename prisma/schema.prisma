@@ -49,6 +49,7 @@ model User {
     sessions      Session[]
     clips         Clip[]
     servers       UserServer[]
+    compressions  Compression[] // Add this line to complete the relation
 }
 
 model VerificationToken {
@@ -127,4 +128,24 @@ model CutSettings {
     startTime      Float     // in seconds
     endTime        Float     // in seconds
     originalDuration Float?  // in seconds
+}
+
+model Compression {
+  id              String   @id @default(cuid())
+  userId          String?  // Make it optional
+  anonymousId     String? // Add this field for tracking anonymous compressions
+  originalName    String
+  originalSize    Int
+  compressedSize  Int
+  compressionRatio Float
+  format          String
+  quality         Int
+  filePath        String
+  createdAt       DateTime @default(now())
+  expiresAt       DateTime
+  
+  // For registered users
+  user            User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([anonymousId]) // Add index for anonymous ID lookups
 }

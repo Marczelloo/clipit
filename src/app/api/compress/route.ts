@@ -7,6 +7,7 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import storageConfig from "~/server/config/storage";
 import { v4 as uuidv4 } from "uuid";
+import { db } from "~/server/db";
 
 const execPromise = promisify(exec);
 
@@ -69,15 +70,19 @@ export async function POST(req: NextRequest)
         await execPromise(ffmpegCmd);
 
         const userId = session?.user?.id ?? "anonymous";
+
+        const targetFolder = session?.user?.id 
+            ? path.join("compressed", userId)
+            : path.join("compressed", "anonymous", processId.substring(0, 8));
+            
         const targetPath = path.join(
-            "compressed",
-            userId,
+            targetFolder,
             `${processId}.${format ?? 'mp4'}`
         );
 
-        const permamentPath = path.join(storageConfig.getPath("uploads"), targetPath);
-        await mkdir(path.dirname(permamentPath), { recursive: true });
-        fs.copyFileSync(outputPath, permamentPath);
+        const permanentPath = path.join(storageConfig.getPath("uploads"), targetPath);
+        await mkdir(path.dirname(permanentPath), { recursive: true });
+        fs.copyFileSync(outputPath, permanentPath);
 
         const originalSize = fs.statSync(inputPath).size;
         const compressedSize = fs.statSync(outputPath).size;
@@ -86,13 +91,32 @@ export async function POST(req: NextRequest)
         fs.unlinkSync(outputPath);
         fs.rmdirSync(tempDir, { recursive: true });
 
-        return(NextResponse.json({
+        const expirationTime = new Date();
+        expirationTime.setHours(expirationTime.getHours() + 6); // 6 hours expiration      
+
+        await db.compression.create({
+            data: {
+                userId: session?.user?.id || undefined,  // Use undefined instead of "anonymous"
+                anonymousId: !session?.user?.id ? processId : null,
+                originalName: file.name,
+                originalSize,
+                compressedSize,
+                compressionRatio: parseFloat(((originalSize - compressedSize) / originalSize * 100).toFixed(2)),
+                format: format || path.extname(file.name).replace('.', ''),
+                quality: parseInt(quality) || 75,
+                filePath: targetPath,
+                expiresAt: expirationTime,
+            }
+        });
+
+        return NextResponse.json({
             success: true,
             fileUrl: `/api/files/${targetPath}`,
             originalSize,
             compressedSize,
-            compressionRatio: ((originalSize - compressedSize) / originalSize * 100).toFixed(2)
-        }));
+            compressionRatio: ((originalSize - compressedSize) / originalSize * 100).toFixed(2),
+            anonymousId: !session?.user?.id ? processId : null // Add this line
+        });
 
 
     }

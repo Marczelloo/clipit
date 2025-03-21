@@ -24,11 +24,19 @@ import {
   FileDown,
   Zap,
   RotateCcw,
+  Clock
 } from "lucide-react";
 import { Switch } from "~/components/ui/switch";
 import { Label } from "~/components/ui/label";
 import { useToast } from "~/hooks/use-toast";
 import { formatBytes } from "~/lib/utils";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "~/components/ui/accordion";
+import { useSession } from "next-auth/react";
 
 export default function CompressPage() {
   const [video, setVideo] = useState<File | null>(null);
@@ -45,6 +53,9 @@ export default function CompressPage() {
   const [originalSize, setOriginalSize] = useState<number>(0);
   const [bitrateMultiplier, setBitrateMultiplier] = useState(1);
   const [progress, setProgress] = useState(0);
+  const { data: session } = useSession();
+  const [recentCompressions, setRecentCompressions] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -71,6 +82,34 @@ export default function CompressPage() {
       }
     }
   }, [targetSize, originalSize, compressionMode]);
+
+  useEffect(() => {
+    const fetchCompressions = async () => {
+      setLoadingHistory(true);
+      try {
+        // For logged-in users, fetch from API
+        if (session?.user) {
+          const res = await fetch('/api/compress/user-history');
+          const data = await res.json();
+          setRecentCompressions(data.compressions);
+        } else {
+          // For anonymous users, fetch using localStorage IDs
+          const anonymousIds = JSON.parse(localStorage.getItem("anonymousCompressions") || "[]");
+          if (anonymousIds.length > 0) {
+            const res = await fetch(`/api/compress/anonymous-history?ids=${anonymousIds.join(",")}`);
+            const data = await res.json();
+            setRecentCompressions(data.compressions);
+          }
+        }
+      } catch (error) {
+        console.error("Failed to fetch compression history:", error);
+      } finally {
+        setLoadingHistory(false);
+      }
+    };
+  
+    fetchCompressions();
+  }, [session]);
 
   // Detect video FPS when loaded
   const handleVideoLoad = () => {
@@ -129,6 +168,14 @@ export default function CompressPage() {
       if(result.success)
       {
         setCompressedUrl(result.fileUrl);
+
+        if (result.anonymousId) {
+          const existingIds = JSON.parse(localStorage.getItem("anonymousCompressions") || "[]");
+          if (!existingIds.includes(result.anonymousId)) {
+            existingIds.push(result.anonymousId);
+            localStorage.setItem("anonymousCompressions", JSON.stringify(existingIds));
+          }
+        }
 
         toast({
           title: "Video compressed successfully",
@@ -451,6 +498,76 @@ export default function CompressPage() {
           </div>
         </div>
       )}
+      <div className="mt-12 mb-6">
+        <Accordion type="single" collapsible defaultValue="compressions">
+          <AccordionItem value="compressions">
+            <AccordionTrigger className="text-lg font-semibold">
+              <div className="flex items-center gap-2">
+                <Clock className="h-5 w-5" />
+                Recent Compressions
+                {recentCompressions.length > 0 && (
+                  <span className="bg-primary/10 text-primary rounded-full px-2 py-0.5 text-xs">
+                    {recentCompressions.length}
+                  </span>
+                )}
+              </div>
+            </AccordionTrigger>
+            <AccordionContent>
+              {loadingHistory ? (
+                <div className="text-center py-4 text-muted-foreground">Loading recent compressions...</div>
+              ) : recentCompressions.length === 0 ? (
+                <div className="text-center py-4 text-muted-foreground">
+                  <FileArchive className="h-10 w-10 mx-auto mb-3 opacity-50" />
+                  <p>No recent compressions found.</p>
+                </div>
+              ) : (
+                <div className="space-y-1 py-2">
+                  {recentCompressions.map((compression) => {
+                    // Calculate time remaining
+                    const now = new Date();
+                    const expiresAt = new Date(compression.expiresAt);
+                    const hoursRemaining = Math.max(0, Math.round((expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60)));
+                    
+                    return (
+                      <div 
+                        key={compression.id} 
+                        className="flex items-center justify-between p-3 rounded-lg border hover:bg-accent/30 transition-colors"
+                      >
+                        <div className="flex-grow">
+                          <div className="font-medium truncate max-w-md" title={compression.originalName}>
+                            {compression.originalName}
+                          </div>
+                          <div className="flex gap-4 text-xs text-muted-foreground mt-1">
+                            <span className="inline-flex items-center">
+                              {formatBytes(compression.originalSize)} → {formatBytes(compression.compressedSize)}
+                            </span>
+                            <span className="inline-flex items-center">
+                              {compression.compressionRatio}% reduction
+                            </span>
+                            {hoursRemaining > 0 && (
+                              <span className="inline-flex items-center">
+                                <Clock className="h-3 w-3 mr-1" />
+                                {hoursRemaining} hours left
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center">
+                          <a href={`/api/files/${compression.filePath}`} download>
+                            <Button size="sm" variant="ghost">
+                              <Download className="h-4 w-4" />
+                            </Button>
+                          </a>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+      </div>
     </main>
   );
 }
