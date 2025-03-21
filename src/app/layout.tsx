@@ -1,11 +1,11 @@
 import "~/styles/globals.css";
 
 import { Comfortaa } from "next/font/google"; // Changed to Comfortaa
-import { cookies } from "next/headers";
-
 import { TRPCReactProvider } from "~/trpc/react";
-import { ThemeProvider } from "~/components/theme-provider";
 import { Providers } from "~/components/providers";
+import { NavigationBar } from "~/components/navigation-bar";
+import { Footer } from "~/components/footer";
+import { auth } from "~/server/auth";
 
 // Server initialization
 import { initializeServer } from "~/server/init";
@@ -32,15 +32,21 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  // Get cookies as string for TRPC provider
-  const cookieData = await cookies().toString();
+  // Get session for the navigation bar
+  const session = await auth();
   
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`font-sans ${comfortaa.variable}`} style={{ fontFamily: 'Comfortaa, sans-serif' }}>
         <Providers>
-          <TRPCReactProvider cookies={cookieData}>
-            {children}
+          <TRPCReactProvider>
+            <div className="flex flex-col min-h-screen bg-background text-foreground">
+              <NavigationBar session={session} />
+              <main className="flex-1">
+                {children}
+              </main>
+              <Footer />
+            </div>
           </TRPCReactProvider>
         </Providers>
       </body>

@@ -206,7 +206,7 @@ export default function CompressPage() {
   return (
     <main className="container max-w-5xl mx-auto px-4 py-8">
       <div className="flex items-center gap-2 mb-8">
-        <Link href="/">
+        <Link href="/tools">
           <Button variant="ghost" size="icon">
             <ArrowLeft className="h-4 w-4" />
           </Button>
