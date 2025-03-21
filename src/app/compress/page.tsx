@@ -108,7 +108,7 @@ export default function CompressPage() {
       }
     };
   
-    fetchCompressions();
+    void fetchCompressions();
   }, [session]);
 
   // Detect video FPS when loaded

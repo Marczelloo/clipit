@@ -7,6 +7,14 @@ import { TRPCReactProvider } from "~/trpc/react";
 import { ThemeProvider } from "~/components/theme-provider";
 import { Providers } from "~/components/providers";
 
+// Server initialization
+import { initializeServer } from "~/server/init";
+
+// Initialize server-side services in production or when explicitly enabled
+if (process.env.NODE_ENV !== 'development' || process.env.ENABLE_SCHEDULER_IN_DEV === 'true') {
+  initializeServer();
+}
+
 const comfortaa = Comfortaa({
   subsets: ["latin"],
   weight: ["300", "400", "500", "600", "700"],
