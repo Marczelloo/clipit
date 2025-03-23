@@ -7,8 +7,8 @@ import storageConfig from '~/server/config/storage';
 export async function GET(request: NextRequest, { params }: { params: { path: string[] } }) 
 {
     const session = await auth();
-
-    const isAnonymousFile = params.path[0] === "compressed" && params.path[1] === "anonymous";
+    
+    const isAnonymousFile = params.path[1] === "anonymous" ? true : false;
 
     if(!session?.user  && !isAnonymousFile) return NextResponse.json({ error: "Unauthorized"}, { status: 401 });
 
@@ -18,6 +18,8 @@ export async function GET(request: NextRequest, { params }: { params: { path: st
       storageConfig.getPath("uploads"), 
       ...(params.path || [])
     );
+
+    console.log("File path:", filePath);
 
     if(!fs.existsSync(filePath)) return NextResponse.json({ error: "File not found" }, { status: 404 });
 
@@ -42,6 +44,8 @@ export async function GET(request: NextRequest, { params }: { params: { path: st
         headers: {
             "Content-Type": contentType,
             "Content-Length": stat.size.toString(),
+            "Content-Disposition": `attachment; filename="${path.basename(filePath)}"`,
+            "Cache-Control": "no-store"
         }
     });
 }

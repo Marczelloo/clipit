@@ -115,10 +115,14 @@ export async function POST(req: NextRequest)
             originalSize,
             compressedSize,
             compressionRatio: ((originalSize - compressedSize) / originalSize * 100).toFixed(2),
-            anonymousId: !session?.user?.id ? processId : null // Add this line
+            anonymousId: !session?.user?.id ? processId : null
+        }, {
+            headers: {
+                "Content-Type": "application/json",
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff"
+            }
         });
-
-
     }
     catch(error)
     {

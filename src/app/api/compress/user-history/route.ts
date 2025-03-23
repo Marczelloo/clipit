@@ -21,7 +21,6 @@ export async function GET(request: NextRequest) {
       orderBy: {
         createdAt: 'desc'
       },
-      take: 5 // Only show the 5 most recent
     });
     
     return NextResponse.json({ compressions });

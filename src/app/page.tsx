@@ -48,7 +48,7 @@ export default async function Home() {
         <div className="container max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <h2 className="text-3xl font-bold text-center mb-12">How It Works</h2>
           <div className="grid gap-8 md:grid-cols-3">
-            <Link href="/cut" className="group">
+            <Link href="/tools/cut" className="group">
               <div className="flex flex-col items-center rounded-lg border bg-card p-6 text-center shadow-sm transition-all hover:shadow-md hover:border-primary/50">
                 <div className="rounded-full bg-primary/10 p-3 group-hover:bg-primary/20 transition-all">
                   <ScissorsLineDashed className="h-6 w-6 text-primary" />
@@ -60,7 +60,7 @@ export default async function Home() {
               </div>
             </Link>
             
-            <Link href="/compress" className="group">
+            <Link href="/tools/compress" className="group">
               <div className="flex flex-col items-center rounded-lg border bg-card p-6 text-center shadow-sm transition-all hover:shadow-md hover:border-primary/50">
                 <div className="rounded-full bg-primary/10 p-3 group-hover:bg-primary/20 transition-all">
                   <FileArchive className="h-6 w-6 text-primary" />

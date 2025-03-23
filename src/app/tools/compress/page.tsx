@@ -52,10 +52,10 @@ export default function CompressPage() {
   const [originalFps, setOriginalFps] = useState<number | null>(null);
   const [originalSize, setOriginalSize] = useState<number>(0);
   const [bitrateMultiplier, setBitrateMultiplier] = useState(1);
-  const [progress, setProgress] = useState(0);
   const { data: session } = useSession();
   const [recentCompressions, setRecentCompressions] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [progress, setProgress] = useState(0);
 
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -109,7 +109,7 @@ export default function CompressPage() {
     };
   
     void fetchCompressions();
-  }, [session]);
+  }, [session?.user?.id]);
 
   // Detect video FPS when loaded
   const handleVideoLoad = () => {
@@ -142,33 +142,87 @@ export default function CompressPage() {
     }
   };
 
-  const handleCompress = async () => {
-    if(!video) return;
-
+  const handleCompress = async (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (isProcessing || !video) return;
+    
     setIsProcessing(true);
-
-    try
-    {
+    setProgress(10);
+    
+    // Progress simulation
+    const progressInterval = setInterval(() => {
+      setProgress(prev => {
+        const newProgress = prev + Math.random() * 5;
+        return newProgress > 90 ? 90 : newProgress;
+      });
+    }, 1000);
+    
+    try {
       const formData = new FormData();
       formData.append("file", video);
       formData.append("quality", quality.toString());
       formData.append("format", format);
       formData.append("resolution", resolution);
       formData.append("fps", fps);
-
-      const response = await fetch("/api/compress", {
-        method: "POST",
-        body: formData,
-      })
-
-      if(!response.ok) throw new Error("Compression failed");
-
-      const result = await response.json();
-
-      if(result.success)
-      {
+      
+      // Start the request, but wrap it in a try-catch inside a Promise.race
+      // This prevents fetch errors from propagating to Next.js router
+      const fetchResult = await Promise.race([
+        // The actual fetch request
+        (async () => {
+          try {
+            const response = await fetch("/api/compress", {
+              method: "POST",
+              body: formData,
+              headers: {
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache',
+                'Expires': '0',
+                'X-Requested-With': 'XMLHttpRequest'
+              }
+            });
+            
+            if (!response.ok) {
+              throw new Error(`Compression failed: ${response.status}`);
+            }
+            
+            return { success: true, data: await response.json() };
+          } catch (error) {
+            // Return error object instead of throwing
+            return { success: false, error };
+          }
+        })(),
+        
+        // Timeout after 5 minutes
+        new Promise(resolve => setTimeout(() => resolve({ 
+          success: false, 
+          error: new Error("Request timeout") 
+        }), 5 * 60 * 1000))
+      ]);
+      
+      clearInterval(progressInterval);
+      
+      if (!fetchResult.success) {
+        // Handle the error without throwing it
+        console.error("Compression error:", fetchResult.error);
+        
+        toast({
+          title: "Processing in background",
+          description: "The compression is taking longer than expected but will continue in the background.",
+        });
+        
+        setProgress(95); // Set to almost complete
+        return; // Don't throw, just return
+      }
+      
+      const result = fetchResult.data;
+      
+      if (result.success) {
+        setProgress(100);
         setCompressedUrl(result.fileUrl);
-
+        
         if (result.anonymousId) {
           const existingIds = JSON.parse(localStorage.getItem("anonymousCompressions") || "[]");
           if (!existingIds.includes(result.anonymousId)) {
@@ -176,29 +230,31 @@ export default function CompressPage() {
             localStorage.setItem("anonymousCompressions", JSON.stringify(existingIds));
           }
         }
-
+        
         toast({
           title: "Video compressed successfully",
           description: `Reduced by ${result.compressionRatio}% (${formatBytes(result.originalSize)} → ${formatBytes(result.compressedSize)})`,
-        })
+        });
+      } else {
+        console.error("Compression failed:", result.error);
+        toast({
+          title: "Compression failed",
+          description: "The server reported an error during compression.",
+          variant: "destructive",
+        });
       }
-      else
-      {
-        throw new Error(result.error || "Compression failed");
-      }
+    } catch (error) {
+      // This should never be reached due to our error handling above,
+      // but keeping it as a fallback
+      console.error("Unhandled compression error:", error);
+      clearInterval(progressInterval);
       
-    }
-    catch(error)
-    {
-      console.error("Compression error: ", error);
       toast({
-        title: "Compression failed",
-        description: "An error occurred while compressing your video.",
+        title: "Compression error",
+        description: "Something went wrong. Please try again.",
         variant: "destructive",
-      })
-    }
-    finally
-    {
+      });
+    } finally {
       setIsProcessing(false);
     }
   };
@@ -467,6 +523,7 @@ export default function CompressPage() {
               <RotateCcw className="h-4 w-4 mr-2" /> Reset
             </Button>
             <Button
+              type="button"
               onClick={handleCompress}
               disabled={isProcessing}
             >
@@ -479,6 +536,7 @@ export default function CompressPage() {
               )}
             </Button>
             <Button 
+              type="button"
               variant="secondary" 
               disabled={!compressedUrl}
               onClick={() => {

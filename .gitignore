@@ -45,8 +45,9 @@ yarn-error.log*
 # idea files
 .idea
 
-/storage/uploads/clips/
 /storage/uploads/compressed/
 /storage/uploads/processed/
 /storage/uploads/thumbnails/
 /storage/uploads/temp/
+/storage/uploads/cuts/
+/storage/uploads/clips/

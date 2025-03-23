@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { auth } from "~/server/auth";
 import { HydrateClient } from "~/trpc/server";
 import { Button } from "~/components/ui/button";
 import { 
@@ -11,8 +10,6 @@ import {
 } from "lucide-react";
 
 export default async function ToolsPage() {
-  const session = await auth();
-
   return (
     <HydrateClient>
       <section className="w-full py-12 md:py-24">

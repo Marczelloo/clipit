@@ -50,6 +50,7 @@ model User {
     clips         Clip[]
     servers       UserServer[]
     compressions  Compression[] // Add this line to complete the relation
+    cuts      Cut[]
 }
 
 model VerificationToken {
@@ -148,4 +149,25 @@ model Compression {
   user            User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([anonymousId]) // Add index for anonymous ID lookups
+}
+
+model Cut {
+  id              String   @id @default(cuid())
+  userId          String?  // Optional for authenticated users
+  anonymousId     String?  // For anonymous users
+  originalName    String
+  originalSize    Int
+  cutSize         Int
+  startTime       Float    // Start time in seconds
+  endTime         Float    // End time in seconds
+  originalDuration Float
+  format          String
+  filePath        String
+  createdAt       DateTime @default(now())
+  expiresAt       DateTime
+  
+  // For registered users
+  user            User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([anonymousId]) // Index for anonymous ID lookups
 }

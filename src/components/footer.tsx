@@ -1,4 +1,4 @@
-import Link from "next/link";
+"use client";
 
 export function Footer() {
   return (
@@ -7,11 +7,6 @@ export function Footer() {
         <p className="text-center text-sm leading-loose text-muted-foreground md:text-left">
           Built with the T3 Stack & Next.js
         </p>
-        <div className="flex items-center gap-4">
-          <Link href="/test-upload" className="text-sm text-muted-foreground hover:underline">
-            Test Upload
-          </Link>
-        </div>
       </div>
     </footer>
   );
