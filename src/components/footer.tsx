@@ -1,5 +1,3 @@
-"use client";
-
 export function Footer() {
   return (
     <footer className="w-full border-t py-6 md:py-0">

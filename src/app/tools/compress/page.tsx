@@ -56,7 +56,7 @@ export default function CompressPage() {
   const [recentCompressions, setRecentCompressions] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [progress, setProgress] = useState(0);
-
+  
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const { toast } = useToast();
@@ -142,119 +142,59 @@ export default function CompressPage() {
     }
   };
 
-  const handleCompress = async (e: React.MouseEvent<HTMLButtonElement>) => {
+  const handleCompress = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     
-    if (isProcessing || !video) return;
-    
+    if (isProcessing) return;
+    if(!video) return;
+
     setIsProcessing(true);
-    setProgress(10);
-    
-    // Progress simulation
-    const progressInterval = setInterval(() => {
-      setProgress(prev => {
-        const newProgress = prev + Math.random() * 5;
-        return newProgress > 90 ? 90 : newProgress;
-      });
-    }, 1000);
-    
-    try {
+
+    try
+    {
       const formData = new FormData();
       formData.append("file", video);
       formData.append("quality", quality.toString());
       formData.append("format", format);
       formData.append("resolution", resolution);
       formData.append("fps", fps);
-      
-      // Start the request, but wrap it in a try-catch inside a Promise.race
-      // This prevents fetch errors from propagating to Next.js router
-      const fetchResult = await Promise.race([
-        // The actual fetch request
-        (async () => {
-          try {
-            const response = await fetch("/api/compress", {
-              method: "POST",
-              body: formData,
-              headers: {
-                'Cache-Control': 'no-cache, no-store, must-revalidate',
-                'Pragma': 'no-cache',
-                'Expires': '0',
-                'X-Requested-With': 'XMLHttpRequest'
-              }
-            });
-            
-            if (!response.ok) {
-              throw new Error(`Compression failed: ${response.status}`);
-            }
-            
-            return { success: true, data: await response.json() };
-          } catch (error) {
-            // Return error object instead of throwing
-            return { success: false, error };
-          }
-        })(),
-        
-        // Timeout after 5 minutes
-        new Promise(resolve => setTimeout(() => resolve({ 
-          success: false, 
-          error: new Error("Request timeout") 
-        }), 5 * 60 * 1000))
-      ]);
-      
-      clearInterval(progressInterval);
-      
-      if (!fetchResult.success) {
-        // Handle the error without throwing it
-        console.error("Compression error:", fetchResult.error);
-        
-        toast({
-          title: "Processing in background",
-          description: "The compression is taking longer than expected but will continue in the background.",
-        });
-        
-        setProgress(95); // Set to almost complete
-        return; // Don't throw, just return
-      }
-      
-      const result = fetchResult.data;
-      
-      if (result.success) {
-        setProgress(100);
+
+      const response = await fetch("/api/compress", {
+        method: "POST",
+        body: formData,
+      })
+
+      if(!response.ok) throw new Error("Compression failed");
+
+      const result = await response.json();
+
+      if(result.success)
+      {
         setCompressedUrl(result.fileUrl);
-        
-        if (result.anonymousId) {
-          const existingIds = JSON.parse(localStorage.getItem("anonymousCompressions") || "[]");
-          if (!existingIds.includes(result.anonymousId)) {
-            existingIds.push(result.anonymousId);
-            localStorage.setItem("anonymousCompressions", JSON.stringify(existingIds));
-          }
-        }
-        
+
         toast({
           title: "Video compressed successfully",
           description: `Reduced by ${result.compressionRatio}% (${formatBytes(result.originalSize)} → ${formatBytes(result.compressedSize)})`,
-        });
-      } else {
-        console.error("Compression failed:", result.error);
-        toast({
-          title: "Compression failed",
-          description: "The server reported an error during compression.",
-          variant: "destructive",
-        });
+        })
       }
-    } catch (error) {
-      // This should never be reached due to our error handling above,
-      // but keeping it as a fallback
-      console.error("Unhandled compression error:", error);
-      clearInterval(progressInterval);
+      else
+      {
+        throw new Error(result.error || "Compression failed");
+      }
       
+    }
+    catch(error)
+    {
+      console.error("Compression error: ", error);
       toast({
-        title: "Compression error",
-        description: "Something went wrong. Please try again.",
+        title: "Compression failed",
+        description: "An error occurred while compressing your video.",
         variant: "destructive",
-      });
-    } finally {
+      })
+    }
+    finally
+    {
       setIsProcessing(false);
     }
   };
@@ -581,46 +521,53 @@ export default function CompressPage() {
               ) : (
                 <div className="space-y-1 py-2">
                   {recentCompressions.map((compression) => {
-                    // Calculate time remaining
-                    const now = new Date();
-                    const expiresAt = new Date(compression.expiresAt);
-                    const hoursRemaining = Math.max(0, Math.round((expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60)));
-                    
-                    return (
-                      <div 
-                        key={compression.id} 
-                        className="flex items-center justify-between p-3 rounded-lg border hover:bg-accent/30 transition-colors"
-                      >
-                        <div className="flex-grow">
-                          <div className="font-medium truncate max-w-md" title={compression.originalName}>
-                            {compression.originalName}
-                          </div>
-                          <div className="flex gap-4 text-xs text-muted-foreground mt-1">
-                            <span className="inline-flex items-center">
-                              {formatBytes(compression.originalSize)} → {formatBytes(compression.compressedSize)}
-                            </span>
-                            <span className="inline-flex items-center">
-                              {compression.compressionRatio}% reduction
-                            </span>
-                            {hoursRemaining > 0 && (
-                              <span className="inline-flex items-center">
-                                <Clock className="h-3 w-3 mr-1" />
-                                {hoursRemaining} hours left
-                              </span>
-                            )}
-                          </div>
+                  // Calculate time remaining
+                  const now = new Date();
+                  const expiresAt = new Date(compression.expiresAt);
+                  const timeRemainingMs = Math.max(0, expiresAt.getTime() - now.getTime());
+                  const hoursRemaining = Math.floor(timeRemainingMs / (1000 * 60 * 60));
+                  const minutesRemaining = Math.floor((timeRemainingMs % (1000 * 60 * 60)) / (1000 * 60));
+                  
+                  const hasTimeRemaining = timeRemainingMs > 0;
+                  
+                  return (
+                    <div 
+                      key={compression.id} 
+                      className="flex items-center justify-between p-3 rounded-lg border hover:bg-accent/30 transition-colors"
+                    >
+                      <div className="flex-grow">
+                        <div className="font-medium truncate max-w-md" title={compression.originalName}>
+                          {compression.originalName}
                         </div>
-                        <div className="flex items-center">
-                          <a href={`/api/files/${compression.filePath}`} download>
-                            <Button size="sm" variant="ghost">
-                              <Download className="h-4 w-4" />
-                            </Button>
-                          </a>
+                        <div className="flex gap-4 text-xs text-muted-foreground mt-1">
+                          <span className="inline-flex items-center">
+                            {formatBytes(compression.originalSize)} → {formatBytes(compression.compressedSize)}
+                          </span>
+                          <span className="inline-flex items-center">
+                            {compression.compressionRatio}% reduction
+                          </span>
+                          {hasTimeRemaining && (
+                            <span className="inline-flex items-center">
+                              <Clock className="h-3 w-3 mr-1" />
+                              {hoursRemaining > 0 
+                                ? `${hoursRemaining} ${hoursRemaining === 1 ? 'hour' : 'hours'}${minutesRemaining > 0 ? ` ${minutesRemaining} ${minutesRemaining === 1 ? 'minute' : 'minutes'}` : ''} left` 
+                                : `${minutesRemaining} ${minutesRemaining === 1 ? 'minute' : 'minutes'} left`
+                              }
+                            </span>
+                          )}
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
+                      <div className="flex items-center">
+                        <a href={`/api/files/${compression.filePath}`} download>
+                          <Button size="sm" variant="ghost">
+                            <Download className="h-4 w-4" />
+                          </Button>
+                        </a>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
               )}
             </AccordionContent>
           </AccordionItem>
