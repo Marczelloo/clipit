@@ -11,6 +11,15 @@ import { db } from "~/server/db";
 
 const execPromise = promisify(exec);
 
+export const config = {
+    api: {
+      bodyParser: false,
+      responseLimit: '50mb',
+    },
+    // Increase the maximum duration for this API route
+    maxDuration: 120, // 120 seconds (2 minutes)
+  };
+
 export async function POST(req: NextRequest)
 {
     const session = await auth();
@@ -96,7 +105,7 @@ export async function POST(req: NextRequest)
 
         await db.compression.create({
             data: {
-                userId: session?.user?.id || undefined,  // Use undefined instead of "anonymous"
+                userId: session?.user?.id ?? undefined,  // Use undefined instead of "anonymous"
                 anonymousId: !session?.user?.id ? processId : null,
                 originalName: file.name,
                 originalSize,
@@ -109,20 +118,14 @@ export async function POST(req: NextRequest)
             }
         });
 
-        return NextResponse.json({
+        return(NextResponse.json({
             success: true,
             fileUrl: `/api/files/${targetPath}`,
             originalSize,
             compressedSize,
             compressionRatio: ((originalSize - compressedSize) / originalSize * 100).toFixed(2),
             anonymousId: !session?.user?.id ? processId : null
-        }, {
-            headers: {
-                "Content-Type": "application/json",
-                "Cache-Control": "no-store",
-                "X-Content-Type-Options": "nosniff"
-            }
-        });
+        }));
     }
     catch(error)
     {

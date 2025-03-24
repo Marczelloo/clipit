@@ -8,7 +8,7 @@ interface NavigationBarProps {
   session: Session | null;
 }
 
-export function NavigationBar({ session }: NavigationBarProps) {
+export async function NavigationBar({ session }: NavigationBarProps) {
   return (
     <nav className="w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex h-16 items-center justify-between">

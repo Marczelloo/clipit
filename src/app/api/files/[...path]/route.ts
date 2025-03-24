@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 import fs from 'fs';
 import path from 'path';
 import { auth } from '~/server/auth';
 import storageConfig from '~/server/config/storage';
 
-export async function GET(request: NextRequest, { params }: { params: { path: string[] } }) 
+export async function GET(_request: NextRequest, { params }: { params: { path: string[] } }) 
 {
     const session = await auth();
     
@@ -18,8 +19,6 @@ export async function GET(request: NextRequest, { params }: { params: { path: st
       storageConfig.getPath("uploads"), 
       ...(params.path || [])
     );
-
-    console.log("File path:", filePath);
 
     if(!fs.existsSync(filePath)) return NextResponse.json({ error: "File not found" }, { status: 404 });
 

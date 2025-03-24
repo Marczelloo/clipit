@@ -1,4 +1,4 @@
-export function Footer() {
+export async function Footer() {
   return (
     <footer className="w-full border-t py-6 md:py-0">
       <div className="container max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col items-center justify-between gap-4 md:h-24 md:flex-row">

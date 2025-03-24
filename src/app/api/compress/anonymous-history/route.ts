@@ -1,5 +1,6 @@
 // src/app/api/compress/anonymous-history/route.ts
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 import { db } from "~/server/db";
 
 export async function GET(request: NextRequest) {

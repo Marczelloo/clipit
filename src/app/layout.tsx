@@ -6,6 +6,7 @@ import { Providers } from "~/components/providers";
 import { NavigationBar } from "~/components/navigation-bar";
 import { Footer } from "~/components/footer";
 import { auth } from "~/server/auth";
+import { cookies } from "next/headers";
 
 // Server initialization
 import { initializeServer } from "~/server/init";
@@ -34,12 +35,13 @@ export default async function RootLayout({
 }) {
   // Get session for the navigation bar
   const session = await auth();
+  const cookieData = await cookies();
   
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`font-sans ${comfortaa.variable}`} style={{ fontFamily: 'Comfortaa, sans-serif' }}>
         <Providers>
-          <TRPCReactProvider>
+          <TRPCReactProvider cookies={cookieData}>
             <div className="flex flex-col min-h-screen bg-background text-foreground">
               <NavigationBar session={session} />
               <main className="flex-1">

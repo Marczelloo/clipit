@@ -1,7 +1,12 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 import { auth } from "~/server/auth";
 import { cleanupExpiredFiles } from "~/server/services/cleanup";
 import { Scheduler } from "~/server/services/scheduler";
+
+interface CleanupRequest {
+  action?: string;
+}
 
 export async function POST(req: NextRequest) {
   // Check authorization
@@ -11,9 +16,10 @@ export async function POST(req: NextRequest) {
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  
   // Check if we want to run immediately or just check status
-  const { action } = await req.json().catch(() => ({ action: "run" }));
+  
+  
+  const { action } = await req.json().catch(() => ({ action: "run" })) as CleanupRequest;
   
   if (action === "status") {
     // Get the scheduler status

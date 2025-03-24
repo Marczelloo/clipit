@@ -2,7 +2,7 @@ import { ThemeProvider } from "~/components/theme-provider";
 import { Toaster } from "~/components/ui/toaster";
 import { NextAuthProvider } from "~/components/session-provider";
 
-export function Providers({ children }: { children: React.ReactNode }) {
+export async function Providers({ children }: { children: React.ReactNode }) {
   return (
     <NextAuthProvider>
       <ThemeProvider

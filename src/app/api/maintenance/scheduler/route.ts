@@ -1,8 +1,14 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 import { auth } from "~/server/auth";
 import { Scheduler } from "~/server/services/scheduler";
 
-export async function GET(req: NextRequest) {
+interface SchedulerRequestBody {
+  action: "start" | "stop";
+  cronExpression?: string;
+}
+
+export async function GET(_req: NextRequest) {
   // Check authorization
   const session = await auth();
   
@@ -37,7 +43,8 @@ export async function POST(req: NextRequest) {
   }
   
   try {
-    const { action, cronExpression } = await req.json();
+  
+    const { action, cronExpression } = await req.json() as SchedulerRequestBody;
     
     if (action === "start") {
       const job = Scheduler.initCleanupJob(cronExpression);

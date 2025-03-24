@@ -1,9 +1,10 @@
 // src/app/api/compress/user-history/route.ts
-import { NextRequest, NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 import { db } from "~/server/db";
 import { auth } from "~/server/auth";
 
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   const session = await auth();
   
   if (!session?.user?.id) {
@@ -23,7 +24,16 @@ export async function GET(request: NextRequest) {
       },
     });
     
-    return NextResponse.json({ compressions });
+    return NextResponse.json({ 
+      success: true,
+      compressions 
+    },{
+      headers: {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff"
+      }
+    });
   } catch (error) {
     console.error('Error fetching user history:', error);
     return NextResponse.json({ error: 'Failed to fetch compression history' }, { status: 500 });
