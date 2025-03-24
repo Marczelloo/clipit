@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 import { auth } from "~/server/auth";
 import fs from "fs";
 import path from "path";
@@ -81,7 +82,7 @@ export async function POST(req: NextRequest) {
         // Save record to database
         await db.cut.create({
             data: {
-                userId: session?.user?.id || undefined,
+                userId: session?.user?.id ?? undefined,
                 anonymousId: !session?.user?.id ? processId : null,
                 originalName: file.name,
                 originalSize,

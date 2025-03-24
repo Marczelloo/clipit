@@ -71,10 +71,10 @@ export class Scheduler {
   static getJobsStatus() {
     return Object.entries(activeJobs).map(([name, job]) => ({
       name,
-      running: job.running,
+      running: (job as unknown as { running: boolean }).running,
       cronTime: job.cronTime.toString(),
-      lastDate: job.lastDate,
-      nextDate: job.nextDate,
+      lastDate: (job as unknown as { lastDate: Date }).lastDate,
+      nextDate: (job as unknown as { nextDate: Date }).nextDate,
     }));
   }
 }

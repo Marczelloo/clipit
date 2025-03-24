@@ -1,13 +1,12 @@
 import { z } from "zod";
-import { createTRPCRouter, protectedProcedure, publicProcedure } from "~/server/api/trpc";
+import { createTRPCRouter, protectedProcedure } from "~/server/api/trpc";
 import path from "path";
 import { v4 as uuidv4 } from "uuid";
-import storageConfig from "~/server/config/storage";
 
 export const storageRouter = createTRPCRouter({
     getUploadUrl: protectedProcedure
         .input(z.object({ filename: z.string()}))
-        .mutation(async ({ ctx, input }) => {
+        .mutation(async ({ input }) => {
             const fileId = uuidv4();
             const extension = path.extname(input.filename);
             const storagePath = `clips/${fileId}${extension}`;

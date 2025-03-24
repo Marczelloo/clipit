@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useRef } from "react";
 import { Button } from "~/components/ui/button";
 import { Play, Pause } from "lucide-react";
 

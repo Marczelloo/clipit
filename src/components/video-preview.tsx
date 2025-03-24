@@ -19,16 +19,17 @@ export function VideoPreview({
 
   useEffect(() => {
     if (videoRef.current && onVideoLoad) {
+      // Store a reference to the current value
+      const video = videoRef.current;
+      
       const handleLoad = () => {
-        if (videoRef.current) {
-          onVideoLoad(videoRef.current);
-        }
+        onVideoLoad(video);
       };
       
-      videoRef.current.addEventListener('loadedmetadata', handleLoad);
+      video.addEventListener('loadedmetadata', handleLoad);
       
       return () => {
-        videoRef.current?.removeEventListener('loadedmetadata', handleLoad);
+        video.removeEventListener('loadedmetadata', handleLoad);
       };
     }
   }, [onVideoLoad]);

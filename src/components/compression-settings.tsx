@@ -116,7 +116,7 @@ export function CompressionSettings({
                     max={100}
                     step={1}
                     value={[quality]}
-                    onValueChange={(values) => setQuality(values[0])}
+                    onValueChange={(values) => setQuality(values[0] ?? quality)}
                   />
                   <div className="flex justify-between mt-1 text-xs text-muted-foreground">
                     <span>Smaller file</span>
@@ -226,7 +226,7 @@ export function CompressionSettings({
                   <SelectValue placeholder="Select frame rate" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="original">Original ({originalFps || "detecting..."})</SelectItem>
+                  <SelectItem value="original">Original ({originalFps ?? "detecting..."})</SelectItem>
                   <SelectItem value="60">60 FPS</SelectItem>
                   <SelectItem value="30">30 FPS</SelectItem>
                   <SelectItem value="24">24 FPS (Cinematic)</SelectItem>
@@ -245,7 +245,7 @@ export function CompressionSettings({
                 max={2}
                 step={0.1}
                 value={[bitrateMultiplier]}
-                onValueChange={(values) => setBitrateMultiplier(values[0])}
+                onValueChange={(values) => setBitrateMultiplier(values[0] ?? bitrateMultiplier)}
               />
               <p className="text-xs text-muted-foreground">Adjusts video bitrate (higher = better quality but larger file)</p>
             </div>
