@@ -13,7 +13,7 @@ export function VideoUploader({ onVideoSelected }: VideoUploaderProps) {
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file && file.type.includes("video")) {
+    if (file?.type.includes("video")) {
       const url = URL.createObjectURL(file);
       onVideoSelected(file, url);
     } else {

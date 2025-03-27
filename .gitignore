@@ -48,6 +48,6 @@ yarn-error.log*
 /storage/uploads/compressed/
 /storage/uploads/processed/
 /storage/uploads/thumbnails/
-/storage/uploads/temp/
+/storage/temp/
 /storage/uploads/cuts/
 /storage/uploads/clips/

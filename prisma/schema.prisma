@@ -48,9 +48,12 @@ model User {
     accounts      Account[]
     sessions      Session[]
     clips         Clip[]
-    servers       UserServer[]
-    compressions  Compression[] // Add this line to complete the relation
-    cuts      Cut[]
+    compressions  Compression[]
+    cuts          Cut[]
+    
+    // Add new ClipServer relations
+    ownedClipServers  ClipServer[]    @relation("ServerOwner")
+    clipServerMemberships ClipServerUser[]
 }
 
 model VerificationToken {
@@ -61,20 +64,31 @@ model VerificationToken {
     @@unique([identifier, token])
 }
 
-// ClipIt app models
-model DiscordServer {
+// New ClipServer models
+model ClipServer {
     id             String    @id
     name           String
-    image          String?
-    users          UserServer[]
-    clips          Clip[]
+    imageUrl       String?
+    ownerId        String
+    inviteCode     String    @unique
+    createdAt      DateTime  @default(now())
+    updatedAt      DateTime  @updatedAt
+    
+    // Relations
+    owner          User      @relation("ServerOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+    users          ClipServerUser[]
+    clips          Clip[]    @relation("ClipServerClips")
 }
 
-model UserServer {
-    user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+model ClipServerUser {
     userId         String
-    server         DiscordServer  @relation(fields: [serverId], references: [id], onDelete: Cascade)
     serverId       String
+    isOwner        Boolean   @default(false)
+    joinedAt       DateTime  @default(now())
+    
+    // Relations
+    user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+    server         ClipServer @relation(fields: [serverId], references: [id], onDelete: Cascade)
 
     @@id([userId, serverId])
 }
@@ -100,11 +114,15 @@ model Clip {
     userId         String
     user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
     serverId       String
-    server         DiscordServer  @relation(fields: [serverId], references: [id], onDelete: Cascade)
+    
+    // New ClipServer relation
+    clipServerId   String?
+    clipServer     ClipServer?    @relation("ClipServerClips", fields: [clipServerId], references: [id], onDelete: SetNull)
     
     // Indexes for faster querying
     @@index([userId, createdAt])
     @@index([serverId, createdAt])
+    @@index([clipServerId, createdAt]) // New index for ClipServer
 }
 
 model CompressionSettings {
