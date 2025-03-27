@@ -23,9 +23,10 @@ interface UserWithClips {
 
 interface UserClipsProps {
   userWithClips: UserWithClips;
+  onClipDeleted?: (clipId: string) => void;
 }
 
-export function UserClips({ userWithClips }: UserClipsProps) {
+export function UserClips({ userWithClips, onClipDeleted }: UserClipsProps) {
   const { id, name, image, clips } = userWithClips;
   
   return (
@@ -48,7 +49,11 @@ export function UserClips({ userWithClips }: UserClipsProps) {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 pl-10">
           {clips.map((clip) => (
-            <ClipCard key={clip.id} clip={clip} />
+            <ClipCard 
+              key={clip.id} 
+              clip={clip} 
+              onDelete={onClipDeleted}
+            />
           ))}
         </div>
       )}

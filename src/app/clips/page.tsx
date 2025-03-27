@@ -231,6 +231,22 @@ export default function ClipsPage() {
     }
   };
 
+  // Handle clip deletion
+  const handleClipDeleted = (clipId: string) => {
+    // Remove the deleted clip from recentClips
+    setRecentClips(prevClips => prevClips.filter(clip => clip.id !== clipId));
+    
+    // Remove the deleted clip from usersWithClips
+    setUsersWithClips(prevUsers => 
+      prevUsers.map(user => ({
+        ...user,
+        clips: user.clips.filter(clip => clip.id !== clipId)
+      }))
+      // Filter out any users who now have 0 clips
+      .filter(user => user.clips.length > 0)
+    );
+  };
+
   // Filter clips based on search query
   const filteredRecentClips = searchQuery 
     ? recentClips.filter(clip => 
@@ -534,7 +550,7 @@ export default function ClipsPage() {
                       ) : (
                         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                           {filteredRecentClips.map((clip) => (
-                            <ClipCard key={clip.id} clip={clip} />
+                            <ClipCard key={clip.id} clip={clip} onDelete={handleClipDeleted} />
                           ))}
                         </div>
                       )}
@@ -586,7 +602,10 @@ export default function ClipsPage() {
                           {/* User clips sections */}
                           {usersWithClips.map((userWithClips) => (
                             <div id={`user-${userWithClips.id}`} key={userWithClips.id}>
-                              <UserClips userWithClips={userWithClips} />
+                              <UserClips 
+                                userWithClips={userWithClips} 
+                                onClipDeleted={handleClipDeleted}
+                              />
                             </div>
                           ))}
                         </>
