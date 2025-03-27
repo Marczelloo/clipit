@@ -4,5 +4,23 @@
       "path": "/api/maintenance/cleanup",
       "schedule": "0 0 * * *"
     }
-  ]
+  ],
+  "functions": {
+    "src/app/api/clips/upload/route.ts": {
+      "memory": 1024,
+      "maxDuration": 300
+    },
+    "src/app/api/upload/route.ts": {
+      "memory": 1024,
+      "maxDuration": 300
+    },
+    "src/app/api/compress/route.ts": {
+      "memory": 1024,
+      "maxDuration": 300
+    },
+    "src/app/api/cut/route.ts": {
+      "memory": 1024,
+      "maxDuration": 300
+    }
+  }
 }

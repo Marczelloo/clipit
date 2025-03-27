@@ -8,6 +8,15 @@ import {
     STORAGE_BUCKETS 
 } from '~/server/config/supabase-storage';
 
+// Configure the API route to handle large file uploads
+export const config = {
+  api: {
+    bodyParser: false,
+    responseLimit: false,
+  },
+  maxDuration: 300, // 5 minutes for longer upload processing
+};
+
 export async function POST(req: NextRequest){
     const session = await auth();
 
