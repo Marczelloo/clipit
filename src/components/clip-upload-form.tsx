@@ -13,13 +13,6 @@ import {
   CardHeader,
   CardTitle,
 } from "~/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "~/components/ui/select";
 
 interface ClipServer {
   id: string;
@@ -29,15 +22,14 @@ interface ClipServer {
 interface ClipUploadFormProps {
   servers: ClipServer[];
   selectedServerId: string;
-  onServerChange: (serverId: string) => void;
+  onServerChange?: (serverId: string) => void; // Made optional since we won't use it
   onUploadComplete: () => void;
   onCancel: () => void;
 }
 
 export function ClipUploadForm({ 
-  servers, 
   selectedServerId, 
-  onServerChange, 
+  servers,
   onUploadComplete, 
   onCancel 
 }: ClipUploadFormProps) {
@@ -47,6 +39,9 @@ export function ClipUploadForm({
   const [clipUrl, setClipUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const { toast } = useToast();
+
+  // Get current server name for display
+  const currentServer = servers.find(server => server.id === selectedServerId)?.name || "Server";
 
   // Handle video selection from uploader
   const handleVideoSelected = (file: File, url: string) => {
@@ -147,7 +142,7 @@ export function ClipUploadForm({
       <CardHeader>
         <CardTitle>Upload New Clip</CardTitle>
         <CardDescription>
-          Upload a video clip to share with your server.
+          Upload a video clip to "{currentServer}"
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -164,23 +159,7 @@ export function ClipUploadForm({
               />
             </div>
             
-            <div className="grid gap-4">
-              <div className="grid gap-2">
-                <label htmlFor="server" className="text-sm font-medium">Server</label>
-                <Select value={selectedServerId} onValueChange={onServerChange}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a server" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {servers.map((server) => (
-                      <SelectItem key={server.id} value={server.id}>
-                        {server.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              
+            <div className="grid gap-4">              
               <div className="grid gap-2">
                 <label htmlFor="title" className="text-sm font-medium">Clip Title</label>
                 <Input 

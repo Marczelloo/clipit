@@ -101,6 +101,31 @@ export default function ClipsPage() {
   
   const { toast } = useToast();
 
+  // Helper function to store selected server ID in localStorage
+  const saveSelectedServer = (serverId: string) => {
+    try {
+      localStorage.setItem('clipit-selected-server', serverId);
+    } catch (error) {
+      console.error('Failed to save server selection to localStorage:', error);
+    }
+  };
+
+  // Function to get the stored server ID from localStorage
+  const getStoredServerSelection = (): string | null => {
+    try {
+      return localStorage.getItem('clipit-selected-server');
+    } catch (error) {
+      console.error('Failed to get server selection from localStorage:', error);
+      return null;
+    }
+  };
+
+  // Update the server selection and save it to localStorage
+  const handleSelectServer = (serverId: string) => {
+    setSelectedServer(serverId);
+    saveSelectedServer(serverId);
+  };
+
   // Fetch user's servers
   useEffect(() => {
     const fetchServers = async () => {
@@ -118,9 +143,18 @@ export default function ClipsPage() {
           const data = await response.json();
           setServers(data.servers || []);
           
-          // Select the first server by default if available
-          if (data.servers?.length > 0) {
+          // Check for stored selection first
+          const storedServerId = getStoredServerSelection();
+          
+          // If there's a stored selection and it exists in the available servers, use it
+          if (storedServerId && data.servers?.some(server => server.id === storedServerId)) {
+            setSelectedServer(storedServerId);
+          }
+          // Otherwise select the first server by default if available
+          else if (data.servers?.length > 0) {
             setSelectedServer(data.servers[0].id);
+            // Also save this selection
+            saveSelectedServer(data.servers[0].id);
           }
           
         } catch (error) {
@@ -179,6 +213,13 @@ export default function ClipsPage() {
     }
   }, [selectedServer, session?.user?.id, toast]);
 
+  // Hide upload form when server changes
+  useEffect(() => {
+    if (uploadMode) {
+      setUploadMode(false);
+    }
+  }, [selectedServer]);
+
   // Handle server created
   const handleServerCreated = async (serverId: string) => {
     // Refresh servers list and select the new server
@@ -188,7 +229,7 @@ export default function ClipsPage() {
       if (response.ok) {
         const data = await response.json();
         setServers(data.servers || []);
-        setSelectedServer(serverId);
+        handleSelectServer(serverId); // Use the handler to update and save
       }
     } catch (error) {
       console.error("Error refreshing servers:", error);
@@ -204,7 +245,7 @@ export default function ClipsPage() {
       if (response.ok) {
         const data = await response.json();
         setServers(data.servers || []);
-        setSelectedServer(serverId);
+        handleSelectServer(serverId); // Use the handler to update and save
       }
     } catch (error) {
       console.error("Error refreshing servers:", error);
@@ -302,7 +343,7 @@ export default function ClipsPage() {
           {servers.map((server) => (
             <div key={server.id} className="w-full" style={{ aspectRatio: "1/1" }}>
               <Button
-                onClick={() => setSelectedServer(server.id)}
+                onClick={() => handleSelectServer(server.id)} // Use the handler to update and save
                 className={`w-full h-full rounded-[16px] flex items-center justify-center transition-all duration-200 
                   ${selectedServer === server.id 
                     ? 'bg-primary text-primary-foreground rounded-[12px]' 
@@ -379,14 +420,22 @@ export default function ClipsPage() {
               <div className="space-y-0.5">
                 <button 
                   className={`w-full px-2 py-1.5 rounded flex items-center gap-2 text-sm ${activeView === 'recent' ? 'bg-accent' : 'hover:bg-muted'}`}
-                  onClick={() => setActiveView('recent')}
+                  onClick={() => {
+                    setActiveView('recent');
+                    // Hide upload form when changing channel
+                    if (uploadMode) setUploadMode(false);
+                  }}
                 >
                   <Hash className="h-4 w-4 opacity-70" />
                   <span className="truncate">recent-clips</span>
                 </button>
                 <button 
                   className={`w-full px-2 py-1.5 rounded flex items-center gap-2 text-sm ${activeView === 'users' ? 'bg-accent' : 'hover:bg-muted'}`}
-                  onClick={() => setActiveView('users')}
+                  onClick={() => {
+                    setActiveView('users');
+                    // Hide upload form when changing channel
+                    if (uploadMode) setUploadMode(false);
+                  }}
                 >
                   <Hash className="h-4 w-4 opacity-70" />
                   <span className="truncate">by-user</span>
@@ -402,7 +451,11 @@ export default function ClipsPage() {
               <div className="space-y-0.5">
                 <button 
                   className={`w-full px-2 py-1.5 rounded flex items-center gap-2 text-sm ${activeView === 'members' ? 'bg-accent' : 'hover:bg-muted'}`}
-                  onClick={() => setActiveView('members')}
+                  onClick={() => {
+                    setActiveView('members');
+                    // Hide upload form when changing channel
+                    if (uploadMode) setUploadMode(false);
+                  }}
                 >
                   <Users className="h-4 w-4 opacity-70" />
                   <span className="truncate">members</span>
