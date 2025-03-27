@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
-import fs from "fs/promises";
 import path from "path";
 
 import { db } from "~/server/db";
 import { auth } from "~/server/auth";
-import storageConfig from "~/server/config/storage";
+import { deleteFile, STORAGE_BUCKETS, getStoragePathFromUrl } from "~/server/config/supabase-storage";
 
 // GET endpoint to fetch a specific clip by ID
 export async function GET(
@@ -81,39 +80,38 @@ export async function DELETE(
       where: { id: clipId },
     });
     
-    // Delete the associated files if they exist
-    const storageDir = storageConfig.getPath("uploads");
-    
     try 
     {
-      // Try to delete the clip file
+      // Delete the clip file from Supabase storage
       if (clip.fileUrl) 
       {
-        const clipFilename = path.basename(clip.fileUrl);
-        const clipPath = path.join(storageDir, "clips", clip.clipServerId ?? "", clipFilename);
-      
-        await fs.unlink(clipPath).catch(() => {
-          // Ignore errors if file doesn't exist
-          console.log("Clip file not found for deletion:", clipPath);
-        });
+        // Extract the storage path from the URL
+        const clipStoragePath = getStoragePathFromUrl(clip.fileUrl);
+        
+        if (clipStoragePath) {
+          await deleteFile(STORAGE_BUCKETS.CLIPS, clipStoragePath).catch(err => {
+            console.log("Error deleting clip file from storage:", err);
+          });
+        }
       }
       
-      // Try to delete the thumbnail if it exists
+      // Delete the thumbnail from Supabase storage
       if (clip.thumbnailUrl) 
       {
-        const thumbnailFilename = path.basename(clip.thumbnailUrl);
-        const thumbnailPath = path.join(storageDir, "thumbnails", clip.clipServerId ?? "", thumbnailFilename);
+        // Extract the storage path from the URL
+        const thumbnailStoragePath = getStoragePathFromUrl(clip.thumbnailUrl);
         
-        await fs.unlink(thumbnailPath).catch(() => {
-          // Ignore errors if file doesn't exist
-          console.log("Thumbnail file not found for deletion:", thumbnailPath);
-        });
+        if (thumbnailStoragePath) {
+          await deleteFile(STORAGE_BUCKETS.THUMBNAILS, thumbnailStoragePath).catch(err => {
+            console.log("Error deleting thumbnail from storage:", err);
+          });
+        }
       }
     } 
     catch (fileError) 
     {
       // Log file deletion errors but don't fail the request
-      console.error("Error deleting clip files:", fileError);
+      console.error("Error deleting clip files from Supabase:", fileError);
     }
     
     return NextResponse.json({ success: true, message: "Clip deleted successfully" });

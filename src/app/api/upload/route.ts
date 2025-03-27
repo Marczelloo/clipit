@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { auth } from '~/server/auth';
-import fs from 'fs';
 import path from 'path';
-import { writeFile } from "fs/promises";
-import storageConfig from '~/server/config/storage';
+import { 
+    uploadFile, 
+    getPublicUrl,
+    STORAGE_BUCKETS 
+} from '~/server/config/supabase-storage';
 
 export async function POST(req: NextRequest){
     const session = await auth();
@@ -23,20 +25,55 @@ export async function POST(req: NextRequest){
 
         if(!file) return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
 
-        const uploadPath = path.join(storageConfig.getPath("uploads"), targetPath);
+        // Determine which bucket to use based on the targetPath
+        const pathParts = targetPath.split('/');
+        let bucket;
 
-        const dir = path.dirname(uploadPath);
-        if(!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        switch (pathParts[0]) {
+            case 'clips':
+                bucket = STORAGE_BUCKETS.CLIPS;
+                break;
+            case 'thumbnails':
+                bucket = STORAGE_BUCKETS.THUMBNAILS;
+                break;
+            case 'compressed':
+                bucket = STORAGE_BUCKETS.COMPRESSED;
+                break;
+            case 'cuts':
+                bucket = STORAGE_BUCKETS.CUTS;
+                break;
+            default:
+                bucket = STORAGE_BUCKETS.CLIPS; // Default to clips bucket
+        }
 
-        const bytes = await file.arrayBuffer();
-        const buffer = Buffer.from(bytes);
-        await writeFile(uploadPath, buffer);
+        // Remove the bucket name from the storage path if it's included
+        const storagePath = pathParts.length > 1 ? pathParts.slice(1).join('/') : targetPath;
 
-        return NextResponse.json({ success: true });
+        // Convert the file to buffer
+        const buffer = Buffer.from(await file.arrayBuffer());
+        
+        // Upload to Supabase storage
+        await uploadFile(
+            bucket,
+            storagePath,
+            buffer,
+            file.type
+        );
+
+        // Get the public URL for the file
+        const fileUrl = getPublicUrl(bucket, storagePath);
+
+        return NextResponse.json({ 
+            success: true,
+            url: fileUrl
+        });
     }
     catch(error)
     {
         console.error("Error uploading file:", error);
-        return NextResponse.json({ error: "Error uploading file"}, { status: 500 });
+        return NextResponse.json({ 
+            error: "Error uploading file", 
+            details: error instanceof Error ? error.message : String(error)
+        }, { status: 500 });
     }
 }

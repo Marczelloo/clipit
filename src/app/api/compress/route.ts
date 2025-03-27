@@ -1,14 +1,19 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { auth } from "~/server/auth";
-import fs from "fs";
 import path from "path";
-import { writeFile, mkdir } from "fs/promises";
+import { writeFile, mkdir, unlink } from "fs/promises";
 import { exec } from "child_process";
 import { promisify } from "util";
-import storageConfig from "~/server/config/storage";
 import { v4 as uuidv4 } from "uuid";
 import { db } from "~/server/db";
+import os from "os";
+import fs from "fs";
+import { 
+  uploadFile, 
+  getPublicUrl,
+  STORAGE_BUCKETS 
+} from "~/server/config/supabase-storage";
 
 const execPromise = promisify(exec);
 
@@ -37,19 +42,23 @@ export async function POST(req: NextRequest)
         if(!file) return NextResponse.json({ error: "No file provided" }, { status: 400 });
 
         const processId = uuidv4();
-
-        const tempDir = path.join(storageConfig.getPath("temp"), processId);
+        
+        // Use OS temp directory instead of local storage
+        const tempDir = path.join(os.tmpdir(), 'clipit-compression', processId);
         await mkdir(tempDir, { recursive: true });
 
         const fileExt = path.extname(file.name).toLowerCase();
+        const outputFormat = format || fileExt.replace(".", "");
 
         const inputPath = path.join(tempDir, `input${fileExt}`);
-        const outputPath = path.join(tempDir, `output.${format || fileExt }`);
+        const outputPath = path.join(tempDir, `output.${outputFormat}`);
 
+        // Write the input file to temp directory
         const bytes = await file.arrayBuffer();
         const buffer = Buffer.from(bytes);
         await writeFile(inputPath, buffer);
 
+        // Build FFmpeg command
         let ffmpegCmd = `ffmpeg -i "${inputPath}" `;
 
         if(quality)
@@ -77,33 +86,42 @@ export async function POST(req: NextRequest)
 
         ffmpegCmd += `"${outputPath}" -y`;
 
+        // Execute FFmpeg command
         await execPromise(ffmpegCmd);
 
-        const userId = session?.user?.id ?? "anonymous";
+        // Define storage path in Supabase
+        const storagePath = session?.user?.id 
+            ? `${session.user.id}/${processId}.${outputFormat}`
+            : `anonymous/${processId.substring(0, 8)}/${processId}.${outputFormat}`;
 
-        const targetFolder = session?.user?.id 
-            ? path.join("compressed", userId)
-            : path.join("compressed", "anonymous", processId.substring(0, 8));
-            
-        const targetPath = path.join(
-            targetFolder,
-            `${processId}.${format ?? 'mp4'}`
+        // Read the output file
+        const outputBuffer = await fs.promises.readFile(outputPath);
+        
+        // Upload the compressed file to Supabase storage
+        await uploadFile(
+            STORAGE_BUCKETS.COMPRESSED,
+            storagePath,
+            outputBuffer,
+            `video/${outputFormat === 'gif' ? 'gif' : outputFormat === 'webm' ? 'webm' : 'mp4'}`
         );
 
-        const permanentPath = path.join(storageConfig.getPath("uploads"), targetPath);
-        await mkdir(path.dirname(permanentPath), { recursive: true });
-        fs.copyFileSync(outputPath, permanentPath);
+        // Get the public URL
+        const fileUrl = getPublicUrl(STORAGE_BUCKETS.COMPRESSED, storagePath);
 
+        // Get file sizes for stats
         const originalSize = fs.statSync(inputPath).size;
         const compressedSize = fs.statSync(outputPath).size;
 
-        fs.unlinkSync(inputPath);
-        fs.unlinkSync(outputPath);
-        fs.rmdirSync(tempDir, { recursive: true });
+        // Clean up temp files
+        await unlink(inputPath).catch(() => {});
+        await unlink(outputPath).catch(() => {});
+        await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {});
 
+        // Set expiration time to 6 hours from now
         const expirationTime = new Date();
-        expirationTime.setHours(expirationTime.getHours() + 6); // 6 hours expiration      
+        expirationTime.setHours(expirationTime.getHours() + 6); 
 
+        // Save record to database
         await db.compression.create({
             data: {
                 userId: session?.user?.id ?? undefined,  // Use undefined instead of "anonymous"
@@ -112,21 +130,21 @@ export async function POST(req: NextRequest)
                 originalSize,
                 compressedSize,
                 compressionRatio: parseFloat(((originalSize - compressedSize) / originalSize * 100).toFixed(2)),
-                format: format || path.extname(file.name).replace('.', ''),
+                format: outputFormat,
                 quality: parseInt(quality) || 75,
-                filePath: targetPath,
+                filePath: storagePath, // Store the Supabase path instead of local path
                 expiresAt: expirationTime,
             }
         });
 
-        return(NextResponse.json({
+        return NextResponse.json({
             success: true,
-            fileUrl: `/api/files/${targetPath}`,
+            fileUrl: fileUrl, // Return the full Supabase URL
             originalSize,
             compressedSize,
             compressionRatio: ((originalSize - compressedSize) / originalSize * 100).toFixed(2),
             anonymousId: !session?.user?.id ? processId : null
-        }));
+        });
     }
     catch(error)
     {

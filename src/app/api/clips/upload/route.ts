@@ -2,11 +2,20 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { auth } from "~/server/auth";
 import { db } from "~/server/db";
-import { mkdir, writeFile } from "fs/promises";
-import { join, extname, dirname } from "path";
+import { extname } from "path";
+import { v4 as uuidv4 } from "uuid";
+import { 
+  uploadFile, 
+  getPublicUrl, 
+  STORAGE_BUCKETS 
+} from "~/server/config/supabase-storage";
+
+// Temporary file handling for thumbnail generation (still needed)
+import { mkdir, writeFile, unlink } from "fs/promises";
+import { join, dirname } from "path";
 import { exec } from "child_process";
 import { promisify } from "util";
-import { v4 as uuidv4 } from "uuid";
+import os from "os";
 import storageConfig from "~/server/config/storage";
 
 const execPromise = promisify(exec);
@@ -59,25 +68,66 @@ export async function POST(request: NextRequest) {
     const fileExt = extname(file.name);
     const filename = `${clipId}${fileExt}`;
 
-    const clipRelativePath = join("clips", serverId, filename);
-    const clipFullPath = join(storageConfig.getPath("uploads"), clipRelativePath);
-
-    await mkdir(dirname(clipFullPath), { recursive: true });
+    // Define storage paths for Supabase
+    const clipStoragePath = `${serverId}/${filename}`;
+    const thumbnailStoragePath = `${serverId}/${clipId}.jpg`;
     
-    // Save the file to the clips directory
-    const fileBuffer = await file.arrayBuffer();
-    await writeFile(clipFullPath, Buffer.from(fileBuffer));
-
-    const thumbnailRelativePath = join("thumbnails", serverId, `${clipId}.jpg`);
-    const thumbnailFullPath = join(storageConfig.getPath("uploads"), thumbnailRelativePath);
-
-    await mkdir(dirname(thumbnailFullPath), { recursive: true });
+    // Get file data
+    const fileBuffer = Buffer.from(await file.arrayBuffer());
     
-    // Generate thumbnail using ffmpeg
+    // Upload the video file to Supabase Storage
+    await uploadFile(
+      STORAGE_BUCKETS.CLIPS, 
+      clipStoragePath, 
+      fileBuffer,
+      file.type
+    );
+
+    // Get the public URL for the clip
+    const clipUrl = getPublicUrl(STORAGE_BUCKETS.CLIPS, clipStoragePath);
+    
+    // Thumbnail generation
+    // Since ffmpeg processing can't be done directly in Supabase,
+    // we'll temporarily save the file locally, generate the thumbnail, 
+    // and then upload the thumbnail to Supabase
+    
+    let thumbnailUrl = null;
+    
     try {
+      // Create a temp directory path
+      const tempDir = join(os.tmpdir(), 'clipit-thumbnails');
+      const tempVideoPath = join(tempDir, filename);
+      const tempThumbnailPath = join(tempDir, `${clipId}.jpg`);
+      
+      // Ensure temp directory exists
+      await mkdir(tempDir, { recursive: true });
+      
+      // Write the video file temporarily to disk
+      await writeFile(tempVideoPath, fileBuffer);
+      
+      // Generate thumbnail using ffmpeg
       await execPromise(
-        `ffmpeg -i "${clipFullPath}" -ss 00:00:01.000 -vframes 1 -vf "scale=480:-1" "${thumbnailFullPath}" -y`
+        `ffmpeg -i "${tempVideoPath}" -ss 00:00:01.000 -vframes 1 -vf "scale=480:-1" "${tempThumbnailPath}" -y`
       );
+      
+      // Read the generated thumbnail
+      const thumbnailBuffer = await require('fs/promises').readFile(tempThumbnailPath);
+      
+      // Upload the thumbnail to Supabase Storage
+      await uploadFile(
+        STORAGE_BUCKETS.THUMBNAILS, 
+        thumbnailStoragePath, 
+        thumbnailBuffer, 
+        'image/jpeg'
+      );
+      
+      // Get the public URL for the thumbnail
+      thumbnailUrl = getPublicUrl(STORAGE_BUCKETS.THUMBNAILS, thumbnailStoragePath);
+      
+      // Clean up temporary files
+      await unlink(tempVideoPath).catch(() => {});
+      await unlink(tempThumbnailPath).catch(() => {});
+      
     } catch (thumbnailError) {
       console.error("Error generating thumbnail:", thumbnailError);
       // Continue without thumbnail if it fails
@@ -89,8 +139,8 @@ export async function POST(request: NextRequest) {
         id: clipId,
         title,
         description,
-        fileUrl: `/api/files/${clipRelativePath}`,
-        thumbnailUrl: `/api/files/${thumbnailRelativePath}`,
+        fileUrl: clipUrl,
+        thumbnailUrl: thumbnailUrl,
         userId: session.user.id,
         serverId: "default", // Using a placeholder for the required field
         clipServerId: serverId, // This is the ClipServer ID we actually want to use

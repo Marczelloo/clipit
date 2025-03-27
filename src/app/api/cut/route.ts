@@ -1,14 +1,19 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { auth } from "~/server/auth";
-import fs from "fs";
 import path from "path";
-import { writeFile, mkdir } from "fs/promises";
+import { writeFile, mkdir, unlink } from "fs/promises";
 import { exec } from "child_process";
 import { promisify } from "util";
-import storageConfig from "~/server/config/storage";
 import { v4 as uuidv4 } from "uuid";
 import { db } from "~/server/db";
+import os from "os";
+import fs from "fs";
+import { 
+  uploadFile, 
+  getPublicUrl,
+  STORAGE_BUCKETS 
+} from "~/server/config/supabase-storage";
 
 const execPromise = promisify(exec);
 
@@ -30,7 +35,8 @@ export async function POST(req: NextRequest) {
 
         const processId = uuidv4();
 
-        const tempDir = path.join(storageConfig.getPath("temp"), processId);
+        // Use OS temp directory instead of local storage
+        const tempDir = path.join(os.tmpdir(), 'clipit-cuts', processId);
         await mkdir(tempDir, { recursive: true });
 
         const fileExt = path.extname(file.name).toLowerCase();
@@ -39,6 +45,7 @@ export async function POST(req: NextRequest) {
         const inputPath = path.join(tempDir, `input${fileExt}`);
         const outputPath = path.join(tempDir, `output${fileExt}`);
 
+        // Write input file to temp directory
         const bytes = await file.arrayBuffer();
         const buffer = Buffer.from(bytes);
         await writeFile(inputPath, buffer);
@@ -52,28 +59,33 @@ export async function POST(req: NextRequest) {
 
         await execPromise(ffmpegCmd);
 
-        const userId = session?.user?.id ?? "anonymous";
+        // Define storage path in Supabase based on user session
+        const storagePath = session?.user?.id 
+            ? `${session.user.id}/${processId}${fileExt}`
+            : `anonymous/${processId.substring(0, 8)}/${processId}${fileExt}`;
 
-        const targetFolder = session?.user?.id 
-            ? path.join("cuts", userId)
-            : path.join("cuts", "anonymous", processId.substring(0, 8));
-            
-        const targetPath = path.join(
-            targetFolder,
-            `${processId}${fileExt}`
+        // Read the output file
+        const outputBuffer = await fs.promises.readFile(outputPath);
+        
+        // Upload the cut file to Supabase storage
+        await uploadFile(
+            STORAGE_BUCKETS.CUTS,
+            storagePath,
+            outputBuffer,
+            `video/${format}`
         );
 
-        const permanentPath = path.join(storageConfig.getPath("uploads"), targetPath);
-        await mkdir(path.dirname(permanentPath), { recursive: true });
-        fs.copyFileSync(outputPath, permanentPath);
+        // Get the public URL
+        const fileUrl = getPublicUrl(STORAGE_BUCKETS.CUTS, storagePath);
 
+        // Get file sizes for stats
         const originalSize = fs.statSync(inputPath).size;
         const cutSize = fs.statSync(outputPath).size;
 
         // Clean up temp files
-        fs.unlinkSync(inputPath);
-        fs.unlinkSync(outputPath);
-        fs.rmSync(tempDir, { recursive: true, force: true }); 
+        await unlink(inputPath).catch(() => {});
+        await unlink(outputPath).catch(() => {});
+        await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {});
 
         // Set expiration time to 6 hours from now
         const expirationTime = new Date();
@@ -91,14 +103,14 @@ export async function POST(req: NextRequest) {
                 endTime,
                 originalDuration: duration,
                 format,
-                filePath: targetPath,
+                filePath: storagePath, // Store Supabase path instead of local path
                 expiresAt: expirationTime,
             }
         });
 
         return NextResponse.json({
             success: true,
-            fileUrl: `/api/files/${targetPath}`,
+            fileUrl: fileUrl, // Return the Supabase URL directly
             originalSize,
             cutSize,
             startTime,
