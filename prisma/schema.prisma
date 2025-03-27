@@ -3,15 +3,16 @@
 
 generator client {
     provider = "prisma-client-js"
-    // Add previewFeatures for Supabase compatibility
-    previewFeatures = ["postgresqlExtensions"]
+    // Remove Supabase specific preview features
+    // previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-    provider = "postgresql"
-    url      = env("DATABASE_URL")
-    // Add extensions needed by Supabase
-    extensions = [pgcrypto]
+    provider  = "postgresql"
+    url       = env("POSTGRES_PRISMA_URL") // Use Vercel's connection variables
+    directUrl = env("POSTGRES_URL_NON_POOLING") // Direct URL for migrations
+    // Remove Supabase extensions
+    // extensions = [pgcrypto]
 }
 
 // Necessary for Next auth
