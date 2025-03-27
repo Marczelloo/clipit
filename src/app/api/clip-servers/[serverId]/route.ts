@@ -1,18 +1,14 @@
-import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
-import { auth } from "~/server/auth";
-import { db } from "~/server/db";
+import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '~/server/auth';
+import { db } from '~/server/db';
 
-interface ServerParams {
-  params: {
-    serverId: string;
-  }
-}
+export const dynamic = 'force-dynamic';
 
-export async function GET(request: NextRequest, { params }: ServerParams) {
-  // Fix: await params before destructuring
+export async function GET(
+  req: NextRequest,
+  { params }: { params: { serverId: string } }
+) {
   const serverId = params.serverId;
-  
   const session = await auth();
   
   if (!session?.user?.id) {
@@ -25,7 +21,7 @@ export async function GET(request: NextRequest, { params }: ServerParams) {
       where: {
         userId_serverId: {
           userId: session.user.id,
-          serverId: serverId
+          serverId
         }
       }
     });
@@ -45,7 +41,7 @@ export async function GET(request: NextRequest, { params }: ServerParams) {
       return NextResponse.json({ error: "Server not found" }, { status: 404 });
     }
     
-    // Get all clips for this server - FIXED: query using clipServerId instead of serverId
+    // Get all clips for this server
     const allClips = await db.clip.findMany({
       where: {
         clipServerId: serverId
@@ -55,7 +51,7 @@ export async function GET(request: NextRequest, { params }: ServerParams) {
       }
     });
     
-    // Get recent clips (limited to 10) - FIXED: query using clipServerId instead of serverId
+    // Get recent clips (limited to 10)
     const recentClips = await db.clip.findMany({
       where: {
         clipServerId: serverId
@@ -69,7 +65,7 @@ export async function GET(request: NextRequest, { params }: ServerParams) {
     // Get all users in this server
     const serverUserMembers = await db.clipServerUser.findMany({
       where: {
-        serverId: serverId
+        serverId
       },
       include: {
         user: true
@@ -81,7 +77,7 @@ export async function GET(request: NextRequest, { params }: ServerParams) {
       id: membership.user.id,
       name: membership.user.name,
       image: membership.user.image,
-      serverId: serverId,
+      serverId,
       userId: membership.userId,
       isOwner: membership.isOwner
     }));
@@ -121,12 +117,6 @@ export async function GET(request: NextRequest, { params }: ServerParams) {
       recentClips,
       serverUsers,
       users: usersWithClips
-    }, {
-      headers: {
-        "Content-Type": "application/json",
-        "Cache-Control": "no-store",
-        "X-Content-Type-Options": "nosniff"
-      }
     });
   } catch (error) {
     console.error('Error fetching server data:', error);
