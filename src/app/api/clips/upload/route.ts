@@ -26,7 +26,7 @@ export const config = {
     bodyParser: false,
     responseLimit: false,
   },
-  maxDuration: 300, // 5 minutes for longer upload processing
+  maxDuration: 60, // 60 seconds (Vercel free tier limit)
 };
 
 export async function POST(request: NextRequest) {

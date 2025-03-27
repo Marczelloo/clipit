@@ -20,10 +20,10 @@ const execPromise = promisify(exec);
 export const config = {
     api: {
       bodyParser: false,
-      responseLimit: '50mb',
+      responseLimit: false,
     },
-    // Increase the maximum duration for this API route
-    maxDuration: 120, // 120 seconds (2 minutes)
+    // Maximum duration allowed on Vercel free tier
+    maxDuration: 60, // 60 seconds (Vercel free tier limit)
   };
 
 export async function POST(req: NextRequest)
