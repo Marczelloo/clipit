@@ -94,15 +94,29 @@ export function getStoragePathFromUrl(url: string): string | null {
  * Download a file from Supabase Storage
  */
 export async function downloadFile(bucket: string, path: string) {
-  const { data, error } = await supabase.storage
-    .from(bucket)
-    .download(path);
+  console.log(`Downloading file from ${bucket}/${path}`);
+  
+  try {
+    const { data, error } = await supabase.storage
+      .from(bucket)
+      .download(path);
 
-  if (error) {
-    throw error;
+    if (error) {
+      console.error(`Error downloading file from ${bucket}/${path}:`, error);
+      throw error;
+    }
+
+    if (!data) {
+      console.error(`No data returned when downloading file from ${bucket}/${path}`);
+      throw new Error('No data returned from Supabase');
+    }
+
+    console.log(`Successfully downloaded ${bucket}/${path}, size: ${data.size} bytes`);
+    return data;
+  } catch (e) {
+    console.error(`Exception downloading file from ${bucket}/${path}:`, e);
+    throw e;
   }
-
-  return data;
 }
 
 /**

@@ -10,8 +10,8 @@ import {
 } from "~/server/config/supabase-storage";
 
 // Configure the API route to handle chunked uploads
+// Remove the edge runtime to ensure full Node.js compatibility
 export const config = {
-  runtime: 'edge', // Optional: Use edge runtime for better performance
   maxDuration: 60, // 60 seconds limit
 };
 
@@ -35,6 +35,9 @@ export async function POST(request: NextRequest) {
     const fileType = formData.get("fileType") as string;
     const serverId = formData.get("serverId") as string;
     const uploadType = formData.get("uploadType") as string || "clip";
+    
+    // Add logging
+    console.log(`Processing chunk ${index}/${totalChunks} for file ${fileId} (${fileName})`);
     
     // Validate required fields
     if (!chunk || !index || !totalChunks || !fileId || !fileName || !fileType) {
@@ -72,12 +75,22 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    // Instead of saving to local filesystem, upload chunk directly to Supabase
     // Create a path that includes user ID, file ID, and chunk index to ensure uniqueness
     const chunkPath = `chunks/${session.user.id}/${fileId}/chunk-${index}`;
     
-    // Convert the chunk to a buffer
-    const chunkBuffer = Buffer.from(await chunk.arrayBuffer());
+    // Convert the chunk to a buffer and verify it has content
+    const arrayBuffer = await chunk.arrayBuffer();
+    const chunkBuffer = Buffer.from(arrayBuffer);
+    
+    if (chunkBuffer.length === 0) {
+      console.error(`Received empty chunk ${index}/${totalChunks} for file ${fileId}`);
+      return NextResponse.json(
+        { error: "Received empty chunk" },
+        { status: 400 }
+      );
+    }
+    
+    console.log(`Uploading chunk ${index}, size: ${chunkBuffer.length} bytes`);
     
     // Upload the chunk to Supabase storage
     await uploadFile(
@@ -91,6 +104,7 @@ export async function POST(request: NextRequest) {
     const isLastChunk = parseInt(index) === parseInt(totalChunks) - 1;
     
     if (isLastChunk) {
+      console.log(`Received final chunk (${index}) for ${fileId}, ready for finalization`);
       return NextResponse.json({
         success: true,
         ready: true,
