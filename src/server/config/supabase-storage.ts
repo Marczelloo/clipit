@@ -143,4 +143,20 @@ export async function copyFile(
   return getPublicUrl(destinationBucket, destinationPath);
 }
 
+/**
+ * List files in a Supabase Storage bucket with optional prefix
+ */
+export async function listFiles(bucket: string, path?: string) {
+  const { data, error } = await supabase.storage
+    .from(bucket)
+    .list(path || '');
+
+  if (error) {
+    console.error("Error listing files:", error);
+    throw error;
+  }
+
+  return data || [];
+}
+
 export { STORAGE_BUCKETS };

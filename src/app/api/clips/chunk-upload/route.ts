@@ -3,9 +3,6 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { auth } from "~/server/auth";
 import { db } from "~/server/db";
-import { mkdir, writeFile } from "fs/promises";
-import { join } from "path";
-import os from "os";
 import { 
   uploadFile, 
   getPublicUrl, 
@@ -18,8 +15,8 @@ export const config = {
   maxDuration: 60, // 60 seconds limit
 };
 
-// Temporary directory for storing chunk files
-const TEMP_DIR = join(os.tmpdir(), 'clipit-chunks');
+// Define a temporary bucket or folder for chunks
+const CHUNKS_BUCKET = STORAGE_BUCKETS.TEMP || "temp";
 
 export async function POST(request: NextRequest) {
   const session = await auth();
@@ -75,14 +72,20 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    // Create temp directory for chunks if it doesn't exist
-    const userChunkDir = join(TEMP_DIR, session.user.id, fileId);
-    await mkdir(userChunkDir, { recursive: true });
+    // Instead of saving to local filesystem, upload chunk directly to Supabase
+    // Create a path that includes user ID, file ID, and chunk index to ensure uniqueness
+    const chunkPath = `chunks/${session.user.id}/${fileId}/chunk-${index}`;
     
-    // Save the current chunk to disk
-    const chunkPath = join(userChunkDir, `chunk-${index}`);
+    // Convert the chunk to a buffer
     const chunkBuffer = Buffer.from(await chunk.arrayBuffer());
-    await writeFile(chunkPath, chunkBuffer);
+    
+    // Upload the chunk to Supabase storage
+    await uploadFile(
+      CHUNKS_BUCKET, 
+      chunkPath, 
+      chunkBuffer, 
+      'application/octet-stream'
+    );
     
     // Check if this is the last chunk
     const isLastChunk = parseInt(index) === parseInt(totalChunks) - 1;
@@ -95,7 +98,8 @@ export async function POST(request: NextRequest) {
         fileName,
         fileType,
         serverId,
-        uploadType
+        uploadType,
+        totalChunks: parseInt(totalChunks)
       });
     }
     

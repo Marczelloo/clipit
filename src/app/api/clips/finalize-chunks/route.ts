@@ -5,27 +5,27 @@ import { auth } from "~/server/auth";
 import { db } from "~/server/db";
 import { v4 as uuidv4 } from "uuid";
 import { extname } from "path";
-import { readdir, readFile, unlink, rmdir, mkdir, writeFile } from "fs/promises";
-import { join } from "path";
-import os from "os";
-import { exec } from "child_process";
 import { promisify } from "util";
 import { 
   uploadFile, 
   getPublicUrl, 
+  downloadFile,
+  listFiles,
+  deleteFile,
   STORAGE_BUCKETS 
 } from "~/server/config/supabase-storage";
+import { exec } from "child_process";
+import { unlink, mkdir, writeFile } from "fs/promises";
+import { join } from "path";
+import os from "os";
 
 // Configure the API route
 export const config = {
-  api: {
-    responseLimit: false,
-  },
   maxDuration: 60, // 60 seconds (Vercel free tier limit)
 };
 
-// Temporary directory for storing chunk files
-const TEMP_DIR = join(os.tmpdir(), 'clipit-chunks');
+// Define the chunks bucket/folder
+const CHUNKS_BUCKET = STORAGE_BUCKETS.TEMP || "temp";
 const execPromise = promisify(exec);
 
 export async function POST(request: NextRequest) {
@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
   try {
     // Get details from request
     const body = await request.json();
-    const { fileId, fileName, fileType, serverId, title, description, uploadType } = body;
+    const { fileId, fileName, fileType, serverId, title, description, uploadType, totalChunks } = body;
 
     // Check if this is a clip upload or another type (compress, cut)
     if (uploadType && uploadType !== 'clip') {
@@ -72,18 +72,31 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Path to the user's chunk directory for this file
-    const userChunkDir = join(TEMP_DIR, session.user.id, fileId);
+    // Base path for the user's chunks in Supabase storage
+    const chunksBasePath = `chunks/${session.user.id}/${fileId}`;
     
-    // Read all chunks from the temp directory
-    const chunkFiles = await readdir(userChunkDir);
+    // List all chunks from Supabase storage
+    const chunkFiles = await listFiles(CHUNKS_BUCKET, chunksBasePath);
     
-    // Sort chunk files by index for proper ordering
-    chunkFiles.sort((a, b) => {
-      const indexA = parseInt(a.split('-')[1]);
-      const indexB = parseInt(b.split('-')[1]);
-      return indexA - indexB;
-    });
+    if (!chunkFiles || chunkFiles.length === 0) {
+      return NextResponse.json(
+        { error: "No chunks found for this file" },
+        { status: 404 }
+      );
+    }
+    
+    // Sort chunks by index for proper ordering
+    const sortedChunks = chunkFiles
+      .filter(file => file.name.startsWith(`${chunksBasePath}/chunk-`)) // Filter only chunk files
+      .map(file => {
+        // Extract chunk index from filename
+        const indexMatch = file.name.match(/chunk-(\d+)$/);
+        return {
+          path: file.name,
+          index: indexMatch ? parseInt(indexMatch[1]) : -1
+        };
+      })
+      .sort((a, b) => a.index - b.index); // Sort by chunk index
     
     // Generate unique ID for the clip
     const clipId = uuidv4();
@@ -96,11 +109,15 @@ export async function POST(request: NextRequest) {
     const clipStoragePath = `${serverId}/${outputFilename}`;
     const thumbnailStoragePath = `${serverId}/${clipId}.jpg`;
 
-    // Combine all chunks into one buffer
+    // Download and combine all chunks
     let completeFileBuffer = Buffer.alloc(0);
-    for (const chunkFile of chunkFiles) {
-      const chunkPath = join(userChunkDir, chunkFile);
-      const chunkData = await readFile(chunkPath);
+    for (const chunk of sortedChunks) {
+      // Download the chunk from Supabase
+      const chunkData = await downloadFile(CHUNKS_BUCKET, chunk.path);
+      if (!chunkData) {
+        throw new Error(`Failed to download chunk: ${chunk.path}`);
+      }
+      // Combine into complete file buffer
       completeFileBuffer = Buffer.concat([completeFileBuffer, chunkData]);
     }
     
@@ -136,7 +153,9 @@ export async function POST(request: NextRequest) {
       );
       
       // Read the generated thumbnail
-      const thumbnailBuffer = await readFile(tempThumbnailPath);
+      const thumbnailBuffer = await import("fs/promises").then(fs => 
+        fs.readFile(tempThumbnailPath)
+      );
       
       // Upload thumbnail to Supabase
       await uploadFile(
@@ -150,8 +169,8 @@ export async function POST(request: NextRequest) {
       thumbnailUrl = getPublicUrl(STORAGE_BUCKETS.THUMBNAILS, thumbnailStoragePath);
       
       // Clean up temp files
-      await unlink(tempVideoPath);
-      await unlink(tempThumbnailPath);
+      await unlink(tempVideoPath).catch(e => console.error("Error deleting temp video:", e));
+      await unlink(tempThumbnailPath).catch(e => console.error("Error deleting temp thumbnail:", e));
     } catch (thumbnailError) {
       console.error("Error generating thumbnail:", thumbnailError);
       // Continue without thumbnail if generation fails
@@ -177,13 +196,12 @@ export async function POST(request: NextRequest) {
       }
     });
     
-    // Clean up all chunk files
-    for (const chunkFile of chunkFiles) {
-      await unlink(join(userChunkDir, chunkFile));
+    // Clean up chunks from Supabase storage (delete each chunk)
+    for (const chunk of sortedChunks) {
+      await deleteFile(CHUNKS_BUCKET, chunk.path).catch(e => 
+        console.error(`Error deleting chunk ${chunk.path}:`, e)
+      );
     }
-    
-    // Remove the chunk directory
-    await rmdir(userChunkDir);
     
     return NextResponse.json({
       success: true,
