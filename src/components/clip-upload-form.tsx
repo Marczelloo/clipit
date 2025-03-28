@@ -5,6 +5,7 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { useToast } from "~/hooks/use-toast";
 import { VideoUploader } from "~/components/video-uploader";
+import { useChunkedUpload } from "~/hooks/use-chunked-upload";
 import {
   Card,
   CardContent,
@@ -38,7 +39,22 @@ export function ClipUploadForm({
   const [clipFile, setClipFile] = useState<File | null>(null);
   const [clipUrl, setClipUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const { toast } = useToast();
+  
+  // Initialize the chunked upload hook
+  const { uploadFile, finalizeUpload, progress } = useChunkedUpload({
+    onProgress: (progress) => setUploadProgress(progress),
+    onError: (error) => {
+      console.error("Chunked upload error:", error);
+      toast({
+        title: "Upload failed",
+        description: error.message || "Failed to upload your clip",
+        variant: "destructive",
+      });
+      setIsUploading(false);
+    },
+  });
 
   // Get current server name for display
   const currentServer = servers.find(server => server.id === selectedServerId)?.name || "Server";
@@ -69,24 +85,21 @@ export function ClipUploadForm({
     setIsUploading(true);
 
     try {
-      const formData = new FormData();
-      formData.append("file", clipFile);
-      formData.append("title", clipTitle);
-      formData.append("description", clipDescription);
-      formData.append("serverId", selectedServerId);
-
-      const response = await fetch("/api/clips/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error(`Upload failed: ${response.status}`);
+      // Step 1: Upload file in chunks
+      const uploadResult = await uploadFile(clipFile, selectedServerId);
+      
+      if (!uploadResult) {
+        throw new Error("Failed to upload file chunks");
       }
+      
+      // Step 2: Finalize the upload
+      const finalizeResult = await finalizeUpload(
+        uploadResult,
+        clipTitle,
+        clipDescription
+      );
 
-      const result = await response.json();
-
-      if (result.success) {
+      if (finalizeResult?.success) {
         toast({
           title: "Clip uploaded successfully",
           description: "Your clip has been uploaded and is ready to share.",
@@ -96,7 +109,7 @@ export function ClipUploadForm({
         resetForm();
         onUploadComplete();
       } else {
-        throw new Error(result.error || "Upload failed");
+        throw new Error(finalizeResult?.error || "Upload failed");
       }
     } 
     catch (error) 
@@ -119,10 +132,9 @@ export function ClipUploadForm({
         errorMessage = `Server error: ${error.status} ${error.statusText}`;
       }
       
-
       toast({
         title: "Upload failed",
-        description: "Failed to upload your clip. Please try again later.",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -135,6 +147,7 @@ export function ClipUploadForm({
     setClipUrl(null);
     setClipTitle("");
     setClipDescription("");
+    setUploadProgress(0);
   };
 
   return (
@@ -179,6 +192,15 @@ export function ClipUploadForm({
                   placeholder="Describe your clip (optional)" 
                 />
               </div>
+              
+              {isUploading && (
+                <div className="w-full bg-muted rounded-full h-2">
+                  <div 
+                    className="bg-primary h-2 rounded-full transition-all duration-300"
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -194,7 +216,7 @@ export function ClipUploadForm({
           onClick={handleUploadClip} 
           disabled={!clipFile || !selectedServerId || !clipTitle || isUploading}
         >
-          {isUploading ? "Uploading..." : "Upload Clip"}
+          {isUploading ? `Uploading ${uploadProgress}%` : "Upload Clip"}
         </Button>
       </CardFooter>
     </Card>

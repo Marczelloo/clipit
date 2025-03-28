@@ -5,6 +5,8 @@ import Link from "next/link";
 import { Button } from "~/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import { useToast } from "~/hooks/use-toast";
+import { v4 as uuidv4 } from "uuid";
+import { useChunkedUpload } from "~/hooks/use-chunked-upload";
 
 import { VideoUploader } from "~/components/video-uploader";
 import { VideoCutter } from "~/components/video-cutter";
@@ -30,8 +32,23 @@ export default function CutPage() {
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [cutUrl, setCutUrl] = useState<string | null>(null);
+  const [progress, setProgress] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
   const { toast } = useToast();
+
+  // Initialize chunked upload hook
+  const { uploadFile, progress: uploadProgress } = useChunkedUpload({
+    onProgress: (p) => setProgress(Math.floor(p / 2)), // First half of progress is upload
+    onError: (error) => {
+      console.error("Upload error:", error);
+      toast({
+        title: "Upload failed",
+        description: error.message || "Failed to upload video file",
+        variant: "destructive",
+      });
+      setIsProcessing(false);
+    }
+  });
 
   // Format time as MM:SS
   const formatTime = useCallback((seconds: number) => {
@@ -54,153 +71,45 @@ export default function CutPage() {
     canvas.width = 160;
     canvas.height = 90;
 
-    try 
-    {
+    try {
       console.log("Starting thumbnail generation");
       // Save original time to restore later
       const originalTime = video.currentTime;
-      
-      for (let i = 0; i < thumbnailCount; i++) 
-      {
+
+      for (let i = 0; i < thumbnailCount; i++) {
         const timePoint = (duration / thumbnailCount) * i;
         console.log(`Generating thumbnail at time: ${timePoint}`);
         video.currentTime = timePoint;
-        
+
         // Wait for the video to seek to the specified time
         await new Promise<void>((resolve) => {
           const seekHandler = () => {
-            if (context) 
-            {
+            if (context) {
               context.drawImage(video, 0, 0, canvas.width, canvas.height);
               const thumbnail = canvas.toDataURL('image/jpeg', 0.8); // Better quality
               newThumbnails.push(thumbnail);
-              console.log(`Thumbnail ${i+1}/${thumbnailCount} generated`);
+              console.log(`Thumbnail ${i + 1}/${thumbnailCount} generated`);
             }
 
             video.removeEventListener('seeked', seekHandler);
             resolve();
           };
-          
+
           video.addEventListener('seeked', seekHandler);
         });
       }
-      
+
       console.log(`Generated ${newThumbnails.length} thumbnails`);
       setThumbnails(newThumbnails);
-      
-      // Restore original position
+
+      // Restore original time
       video.currentTime = originalTime;
-    } 
-    catch (error) 
-    {
+    } catch (error) {
       console.error("Error generating thumbnails:", error);
-      // Create a basic fallback thumbnail if generation fails
-      const fallbackThumbnails = Array(thumbnailCount).fill('').map((_, i) => {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        canvas.width = 160;
-        canvas.height = 90;
-
-        if (ctx) 
-        {
-          // Create a gradient background as fallback
-          const gradient = ctx.createLinearGradient(0, 0, canvas.width, 0);
-          gradient.addColorStop(0, '#ccc');
-          gradient.addColorStop(1, '#999');
-          ctx.fillStyle = gradient;
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-          
-          // Add time text
-          const timePoint = (duration / thumbnailCount) * i;
-          ctx.fillStyle = '#000';
-          ctx.font = '12px Arial';
-          ctx.textAlign = 'center';
-          ctx.fillText(formatTime(timePoint), canvas.width/2, canvas.height/2);
-        }
-        return canvas.toDataURL();
-      });
-    
-      setThumbnails(fallbackThumbnails);
-
-      toast({
-        title: "Using basic thumbnails",
-        description: "Could not generate video thumbnails, using simplified view instead.",
-        variant: "destructive",
-      });
-    } 
-    finally 
-    {
+    } finally {
       setIsGeneratingThumbnails(false);
     }
-  }, [duration, formatTime, toast]);
-
-  useEffect(() => {
-    if (videoRef.current && duration > 0 && thumbnails.length === 0 && !isGeneratingThumbnails) 
-    {
-      console.log("Triggering thumbnail generation from useEffect");
-      void generateThumbnails();
-    }
-  }, [duration, thumbnails.length, isGeneratingThumbnails, generateThumbnails]);
-
-  // Combined precise time tracking and end time checking
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    
-    let animationFrameId: number;
-    
-    const updateTimeAndCheckBounds = () => {
-      if (video) 
-      {
-        // Update current time for playhead
-        setCurrentTime(video.currentTime);
-        
-        // Check if we've reached end time with high precision
-        if (isPlaying && video.currentTime >= endTime - 0.02) 
-        {
-          video.pause();
-          video.currentTime = endTime; // Ensure exact position
-          setIsPlaying(false);
-        }
-      }
-      animationFrameId = requestAnimationFrame(updateTimeAndCheckBounds);
-    };
-    
-    // Start the animation frame loop
-    animationFrameId = requestAnimationFrame(updateTimeAndCheckBounds);
-    
-    // Also listen for seeking events to update time during scrubbing
-    const handleSeeking = () => {
-      setCurrentTime(video.currentTime);
-    };
-    
-    video.addEventListener('seeking', handleSeeking);
-    
-    // Clean up
-    return () => {
-      cancelAnimationFrame(animationFrameId);
-      video.removeEventListener('seeking', handleSeeking);
-    };
-  }, [videoUrl, endTime, isPlaying]);
-
-  // Handle when a video is selected from the uploader
-  const handleVideoSelected = (file: File, url: string) => {
-    setVideo(file);
-    setVideoUrl(url);
-    // Reset thumbnails when new video is uploaded
-    setThumbnails([]);
-    setCutUrl(null);
-  };
-
-  const handleLoadedMetadata = () => {
-    if (videoRef.current) {
-      const videoDuration = videoRef.current.duration;
-      setDuration(videoDuration);
-      setEndTime(videoDuration);
-      // Generate thumbnails when video is loaded
-      void generateThumbnails();
-    }
-  };  
+  }, [duration]);
 
   const handleCut = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
@@ -209,62 +118,91 @@ export default function CutPage() {
     if (!video || isProcessing) return;
 
     setIsProcessing(true);
+    setProgress(0);
     console.debug("Starting cut process");
 
-    try 
-    {
-        const formData = new FormData();
-        formData.append("file", video);
-        formData.append("startTime", startTime.toString());
-        formData.append("endTime", endTime.toString());
-        formData.append("duration", duration.toString());
+    try {
+      // Step 1: Generate a process ID for this cut operation
+      const processId = uuidv4();
 
-        const response = await fetch("/api/cut", {
-            method: "POST",
-            body: formData,
-        });
+      // Step 2: Upload the file in chunks - specify "cut" as upload type
+      const uploadResult = await uploadFile(video, `cut-${processId}`, "cut");
 
-        if (!response.ok) throw new Error(`Video cutting failed: ${response.status}`);
+      if (!uploadResult) {
+        throw new Error("Failed to upload file");
+      }
 
-        const result = await response.json() as CutResponse;
-        if (result.success) 
-        {
-            console.debug("Cut successful, setting URL:", result.fileUrl);
-            setCutUrl(result.fileUrl ?? null);
+      // Step 3: Send settings to process the uploaded chunks
+      const response = await fetch("/api/cut", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          fileId: uploadResult.fileId,
+          fileName: uploadResult.fileName,
+          fileType: uploadResult.fileType,
+          startTime: startTime,
+          endTime: endTime,
+          duration: duration
+        }),
+      });
 
-            // For anonymous users, store the ID in localStorage
-            if (result.anonymousId) 
-            {
-              const anonymousIds = JSON.parse(localStorage.getItem("anonymousCuts") ?? "[]") as string[];
-              if (!anonymousIds.includes(result.anonymousId)) 
-              {
-                anonymousIds.push(result.anonymousId);
-                localStorage.setItem("anonymousCuts", JSON.stringify(anonymousIds));
-              }
-            }
+      // Track processing progress (starting at 50%)
+      const processingProgress = () => {
+        const interval = setInterval(() => {
+          setProgress((prev) => {
+            // Increment from 50% to 95% during server-side processing
+            const newProgress = Math.min(95, prev + 1);
+            if (newProgress === 95) clearInterval(interval);
+            return newProgress;
+          });
+        }, 500);
+        return interval;
+      };
 
-            toast({
-                title: "Video cut successfully",
-                description: `Cut from ${formatTime(startTime)} to ${formatTime(endTime)}`,
-            });
-        } 
-        else 
-        {
-            throw new Error(result.error ?? "Video cutting failed");
+      const processingInterval = processingProgress();
+
+      if (!response.ok) {
+        clearInterval(processingInterval);
+        throw new Error(`Video cutting failed: ${response.status}`);
+      }
+
+      const result = await response.json() as CutResponse;
+      clearInterval(processingInterval);
+
+      // Set to 100% when done
+      setProgress(100);
+
+      if (result.success) {
+        console.debug("Cut successful, setting URL:", result.fileUrl);
+        setCutUrl(result.fileUrl ?? null);
+
+        // For anonymous users, store the ID in localStorage
+        if (result.anonymousId) {
+          const anonymousIds = JSON.parse(localStorage.getItem("anonymousCuts") ?? "[]") as string[];
+          if (!anonymousIds.includes(result.anonymousId)) {
+            anonymousIds.push(result.anonymousId);
+            localStorage.setItem("anonymousCuts", JSON.stringify(anonymousIds));
+          }
         }
-    } 
-    catch (error) 
-    {
-        console.error("Video cutting error: ", error);
+
         toast({
-            title: "Video cutting failed",
-            description: "An error occurred while cutting your video.",
-            variant: "destructive",
+          title: "Video cut successfully",
+          description: `Cut from ${formatTime(startTime)} to ${formatTime(endTime)}`,
         });
-    } 
-    finally 
-    {
-        setIsProcessing(false);
+      } else {
+        throw new Error(result.error ?? "Video cutting failed");
+      }
+    } catch (error) {
+      console.error("Video cutting error: ", error);
+      toast({
+        title: "Video cutting failed",
+        description: error instanceof Error ? error.message : "An error occurred while cutting your video.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -280,7 +218,7 @@ export default function CutPage() {
       </div>
 
       {!videoUrl ? (
-        <VideoUploader onVideoSelected={handleVideoSelected} />
+        <VideoUploader onVideoSelected={setVideo} />
       ) : (
         <div className="space-y-8">
           <VideoCutter
@@ -297,7 +235,7 @@ export default function CutPage() {
             setEndTime={setEndTime}
             setCurrentTime={setCurrentTime}
             setIsPlaying={setIsPlaying}
-            onVideoLoaded={handleLoadedMetadata}
+            onVideoLoaded={generateThumbnails}
           />
           
           <CutActions
@@ -305,6 +243,7 @@ export default function CutPage() {
             cutUrl={cutUrl}
             onCut={handleCut}
             fileName={video?.name}
+            progress={progress}
           />
         </div>
       )}

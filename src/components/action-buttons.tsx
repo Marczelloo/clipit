@@ -24,19 +24,39 @@ export function ActionButtons({
     
     if (!compressedUrl) return;
     
-    // Download in a way that doesn't trigger navigation
-    const a = document.createElement('a');
-    a.href = compressedUrl;
-    a.download = `compressed_${fileName}`; 
-    a.rel = "noopener noreferrer";
-    a.style.display = "none";
-    document.body.appendChild(a);
-    a.click();
+    // Extract the file extension from the URL
+    const fileExtension = compressedUrl.split('.').pop()?.toLowerCase() || 'mp4';
+    const outputFileName = `compressed_${fileName.replace(/\.[^/.]+$/, '')}.${fileExtension}`;
     
-    // Use setTimeout to ensure the browser has time to process the download
-    setTimeout(() => {
-      document.body.removeChild(a);
-    }, 100);
+    // Create a fetch request to get the actual binary file content
+    fetch(compressedUrl)
+      .then(response => {
+        if (!response.ok) throw new Error("Network response was not ok");
+        return response.blob();
+      })
+      .then(blob => {
+        // Create a blob URL from the binary data
+        const blobUrl = URL.createObjectURL(blob);
+        
+        // Create an anchor element and trigger download
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = outputFileName;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        
+        // Cleanup
+        setTimeout(() => {
+          document.body.removeChild(a);
+          URL.revokeObjectURL(blobUrl);
+        }, 100);
+      })
+      .catch(error => {
+        console.error("Download failed:", error);
+        // Fallback to direct linking if fetch fails
+        window.open(compressedUrl, '_blank');
+      });
   };
 
   const handleResetClick = (e: React.MouseEvent) => {

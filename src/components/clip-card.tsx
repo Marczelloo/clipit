@@ -61,6 +61,64 @@ export function ClipCard({ clip, onDelete }: ClipCardProps) {
   // Check if the current user is the owner of the clip
   const isOwner = session?.user?.id === clip.userId;
 
+  // Handle file download properly
+  const handleDownload = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // Get the file URL from the clip
+    let fileUrl = clip.fileUrl;
+    
+    console.log("Original file URL:", fileUrl);
+    
+    // Extract the file name from the URL or path
+    const fileName = clip.title || "clip.mp4";
+    
+    // Create a fetch request to get the actual binary file content
+    fetch(fileUrl)
+      .then(response => {
+        if (!response.ok) {
+          console.error("Download error status:", response.status, response.statusText);
+          throw new Error(`Network response was not ok: ${response.status} ${response.statusText}`);
+        }
+        return response.blob();
+      })
+      .then(blob => {
+        // Create a blob URL from the binary data
+        const blobUrl = URL.createObjectURL(blob);
+        
+        // Create an anchor element and trigger download
+        const a = document.createElement("a");
+        a.href = blobUrl;
+        a.download = `${fileName}.mp4`; // Assuming clips are mp4 files
+        a.style.display = "none";
+        document.body.appendChild(a);
+        a.click();
+        
+        // Cleanup
+        setTimeout(() => {
+          document.body.removeChild(a);
+          URL.revokeObjectURL(blobUrl);
+        }, 100);
+        
+        toast({
+          title: "Success",
+          description: "Download started",
+        });
+      })
+      .catch(error => {
+        console.error("Download failed:", error);
+        toast({
+          title: "Download failed",
+          description: "Could not download this clip. Please try again later.",
+          variant: "destructive",
+        });
+        
+        // Fallback to direct linking if fetch fails
+        window.open(fileUrl, "_blank");
+      });
+  };
+
   const handleShare = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -162,11 +220,9 @@ export function ClipCard({ clip, onDelete }: ClipCardProps) {
                     <Share className="h-4 w-4 mr-2" />
                     Share
                   </DropdownMenuItem>
-                  <DropdownMenuItem>
-                    <Link href={clip.fileUrl} download target="_blank" rel="noopener noreferrer" className="flex items-center gap-2">
-                      <Download className="h-4 w-4 mr-2" />
-                      Download
-                    </Link>
+                  <DropdownMenuItem onClick={handleDownload}>
+                    <Download className="h-4 w-4 mr-2" />
+                    Download
                   </DropdownMenuItem>
                   <DropdownMenuItem 
                     className="text-destructive focus:text-destructive cursor-pointer"

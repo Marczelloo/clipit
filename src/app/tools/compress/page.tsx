@@ -6,6 +6,8 @@ import { Button } from "~/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import { useToast } from "~/hooks/use-toast";
 import { formatBytes } from "~/lib/utils";
+import { v4 as uuidv4 } from "uuid";
+import { useChunkedUpload } from "~/hooks/use-chunked-upload";
 
 import { VideoUploader } from "~/components/video-uploader";
 import { VideoPreview } from "~/components/video-preview";
@@ -46,14 +48,27 @@ export default function CompressPage() {
   const [originalSize, setOriginalSize] = useState<number>(0);
   const [bitrateMultiplier, setBitrateMultiplier] = useState(1);
   const [progress, setProgress] = useState(0);
-  
+
   const { toast } = useToast();
 
+  // Initialize chunked upload hook
+  const { uploadFile, progress: uploadProgress } = useChunkedUpload({
+    onProgress: (p) => setProgress(Math.floor(p / 2)), // First half of the progress is upload
+    onError: (error) => {
+      console.error("Upload error:", error);
+      toast({
+        title: "Upload failed",
+        description: error.message || "Failed to upload video file",
+        variant: "destructive",
+      });
+      setIsProcessing(false);
+    }
+  });
+
   useEffect(() => {
-    if (video) 
-    {
+    if (video) {
       setOriginalSize(video.size);
-      
+
       // Set a default target size of 70% of original
       const defaultTarget = Math.round(video.size * 0.7);
       setTargetSize(defaultTarget);
@@ -62,8 +77,7 @@ export default function CompressPage() {
 
   // Calculate estimated quality based on target size
   useEffect(() => {
-    if (originalSize && targetSize) 
-    {
+    if (originalSize && targetSize) {
       // Simple estimation - in reality, compression is more complex
       const ratio = targetSize / originalSize;
       const estimatedQuality = Math.max(10, Math.min(100, Math.round(ratio * 100)));
@@ -79,48 +93,45 @@ export default function CompressPage() {
 
   // Handle video metadata loaded
   const handleVideoLoad = (videoElement: HTMLVideoElement) => {
-    if ('requestVideoFrameCallback' in videoElement) 
-    {
+    if ("requestVideoFrameCallback" in videoElement) {
       // Frame counting variables
       let frameCount = 0;
       let startTime: number | null = null;
       let rafId: number | null = null;
-      
+
       // Function to measure FPS
       const countFrames = (now: number, _metadata: VideoFrameMetadata) => {
         if (!startTime) startTime = now;
         frameCount++;
-        
+
         const elapsedTime = now - startTime;
-        
+
         // Measure for about 1 second to get a good sample
-        if (elapsedTime < 1000) 
-        {
+        if (elapsedTime < 1000) {
           // Continue counting frames
           rafId = videoElement.requestVideoFrameCallback(countFrames);
-        } 
-        else 
-        {
+        } else {
           // Calculate FPS and clean up
           const measuredFps = Math.round((frameCount / elapsedTime) * 1000);
           setOriginalFps(measuredFps);
           if (rafId !== null) videoElement.cancelVideoFrameCallback(rafId);
         }
       };
-      
+
       // Start playback to measure (we'll mute it to be less intrusive)
       videoElement.muted = true;
-      videoElement.play().then(() => {
-        // Start counting frames
-        rafId = videoElement.requestVideoFrameCallback(countFrames);
-      }).catch(err => {
-        // Fallback if autoplay fails due to browser policies
-        console.error("Could not autoplay for FPS detection:", err);
-        setOriginalFps(30); // Fallback to default
-      });
-    } 
-    else 
-    {
+      videoElement
+        .play()
+        .then(() => {
+          // Start counting frames
+          rafId = videoElement.requestVideoFrameCallback(countFrames);
+        })
+        .catch((err) => {
+          // Fallback if autoplay fails due to browser policies
+          console.error("Could not autoplay for FPS detection:", err);
+          setOriginalFps(30); // Fallback to default
+        });
+    } else {
       // Fallback for browsers without requestVideoFrameCallback support
       console.log("requestVideoFrameCallback not supported in this browser");
       setOriginalFps(30);
@@ -143,90 +154,97 @@ export default function CompressPage() {
   const handleCompress = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    
+
     if (isProcessing) return;
-    if(!video) return;
-  
+    if (!video) return;
+
     setIsProcessing(true);
     setProgress(0);
-  
-    try 
-    {
-      // Create a FormData object to send the file and settings
-      const formData = new FormData();
-      formData.append("file", video);
-      formData.append("quality", quality.toString());
-      formData.append("format", format);
-      formData.append("resolution", resolution);
-      formData.append("fps", fps);
-  
-      // Use AbortController to handle potential timeouts
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 120000); // 2-minute timeout
-  
+
+    try {
+      // Step 1: Generate a process ID for this compression
+      const processId = uuidv4();
+
+      // Step 2: Upload the file in chunks - specify "compress" as upload type
+      const uploadResult = await uploadFile(video, `compress-${processId}`, "compress");
+
+      if (!uploadResult) {
+        throw new Error("Failed to upload file");
+      }
+
+      // Step 3: Send settings to process the uploaded chunks
       const response = await fetch("/api/compress", {
         method: "POST",
-        body: formData,
-        signal: controller.signal,
-        // Prevent the browser from automatically timing out
         headers: {
-          'Connection': 'keep-alive',
-        }
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          fileId: uploadResult.fileId,
+          fileName: uploadResult.fileName,
+          fileType: uploadResult.fileType,
+          quality: quality.toString(),
+          format: format,
+          resolution: resolution,
+          fps: fps,
+        }),
       });
-      
-      clearTimeout(timeoutId);
-  
-      if(!response.ok) 
-      {
+
+      // Track processing progress (starting at 50%)
+      const processingProgress = () => {
+        const interval = setInterval(() => {
+          setProgress((prev) => {
+            // Increment from 50% to 95% during server-side processing
+            const newProgress = Math.min(95, prev + 1);
+            if (newProgress === 95) clearInterval(interval);
+            return newProgress;
+          });
+        }, 500);
+        return interval;
+      };
+
+      const processingInterval = processingProgress();
+
+      if (!response.ok) {
+        clearInterval(processingInterval);
         const errorText = await response.text();
         throw new Error(`Compression failed: ${errorText}`);
       }
-  
+
       const result = await response.json() as CompressionResponse;
-  
-      if(result.success) 
-      {
+      clearInterval(processingInterval);
+
+      // Set to 100% when done
+      setProgress(100);
+
+      if (result.success) {
         setCompressedUrl(result.fileUrl ?? null);
-  
+
         // For anonymous users, store the ID in localStorage
-        if (result.anonymousId) 
-        {
+        if (result.anonymousId) {
           const anonymousIds = JSON.parse(localStorage.getItem("anonymousCompressions") ?? "[]") as string[];
-          if (!anonymousIds.includes(result.anonymousId)) 
-          {
+          if (!anonymousIds.includes(result.anonymousId)) {
             anonymousIds.push(result.anonymousId);
             localStorage.setItem("anonymousCompressions", JSON.stringify(anonymousIds));
           }
         }
-  
+
         toast({
           title: "Video compressed successfully",
           description: `Reduced by ${result.compressionRatio ?? 0}% (${formatBytes(result.originalSize ?? 0)} → ${formatBytes(result.compressedSize ?? 0)})`,
         });
-      } 
-      else 
-      {
+      } else {
         throw new Error(result.error ?? "Compression failed");
       }
-    } 
-    catch(error) 
-    {
+    } catch (error) {
       console.error("Compression error: ", error);
-      
-      // Only show toast if it's not an abort error (which would happen if the user navigated away)
-      if (!(error instanceof DOMException && error.name === 'AbortError')) 
-      {
-        toast({
-          title: "Compression feedback error",
-          description: "The video was processed, but we couldn't get the results. Please check your library.",
-          variant: "destructive",
-        });
-      }
-    } 
-    finally 
-    {
+
+      toast({
+        title: "Compression failed",
+        description: error instanceof Error ? error.message : "An unexpected error occurred",
+        variant: "destructive",
+      });
+    } finally {
       setIsProcessing(false);
-      setProgress(100);
     }
   };
 
@@ -245,14 +263,14 @@ export default function CompressPage() {
         <VideoUploader onVideoSelected={handleVideoSelected} />
       ) : (
         <div className="space-y-8">
-          <VideoPreview 
-            videoUrl={videoUrl} 
+          <VideoPreview
+            videoUrl={videoUrl}
             onVideoLoad={handleVideoLoad}
             isProcessing={isProcessing}
             progress={progress}
           />
-          
-          <CompressionSettings 
+
+          <CompressionSettings
             compressionMode={compressionMode}
             setCompressionMode={setCompressionMode}
             quality={quality}
@@ -271,7 +289,7 @@ export default function CompressPage() {
             handleTargetSizeChange={handleTargetSizeChange}
           />
 
-          <ActionButtons 
+          <ActionButtons
             isProcessing={isProcessing}
             compressedUrl={compressedUrl}
             onReset={handleReset}
@@ -280,7 +298,7 @@ export default function CompressPage() {
           />
         </div>
       )}
-      
+
       <div className="mt-12 mb-6">
         <RecentItems type="compression" />
       </div>

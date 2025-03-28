@@ -177,6 +177,71 @@ export function RecentItems({ type, title, icon = <Clock className="h-5 w-5" /> 
     void fetchItems();
   }, [fetchItems]);
 
+  // Function to handle file download properly
+  const handleDownload = useCallback((item: RecentItem) => {
+    // For files stored in Supabase, the filePath contains the complete path within the bucket
+    let fileUrl = item.filePath;
+    
+    console.log("Original file path:", fileUrl);
+    
+    // Check if this is already a full URL (starts with http/https)
+    if (!fileUrl.startsWith("http")) {
+      // Determine which bucket to use based on item type
+      const bucket = type === "compression" ? "compressed" : "cuts";
+      
+      if (typeof window !== "undefined") {
+        // Try to get Supabase URL from environment or process.env
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://whaaelplaemlwytsxemy.supabase.co";
+        
+        // Use the full filePath stored in the database - this already includes userId/fileId.ext
+        fileUrl = `${supabaseUrl}/storage/v1/object/public/${bucket}/${fileUrl}`;
+      }
+    }
+    
+    console.log("Attempting to download from URL:", fileUrl);
+    
+    // Extract the file extension from the URL or path
+    const fileExt = fileUrl.split(".").pop()?.toLowerCase() || 
+      (type === "compression" ? "mp4" : "mp4");
+    
+    // Create appropriate filename based on item type and original name
+    const originalName = item.originalName.replace(/\.[^/.]+$/, "");  
+    const fileName = `${type === "compression" ? "compressed" : "cut"}_${originalName}.${fileExt}`;
+    
+    // Create a fetch request to get the actual binary file content
+    fetch(fileUrl)
+      .then(response => {
+        if (!response.ok) {
+          console.error("Download error status:", response.status, response.statusText);
+          throw new Error(`Network response was not ok: ${response.status} ${response.statusText}`);
+        }
+        return response.blob();
+      })
+      .then(blob => {
+        // Create a blob URL from the binary data
+        const blobUrl = URL.createObjectURL(blob);
+        
+        // Create an anchor element and trigger download
+        const a = document.createElement("a");
+        a.href = blobUrl;
+        a.download = fileName;
+        a.style.display = "none";
+        document.body.appendChild(a);
+        a.click();
+        
+        // Cleanup
+        setTimeout(() => {
+          document.body.removeChild(a);
+          URL.revokeObjectURL(blobUrl);
+        }, 100);
+      })
+      .catch(error => {
+        console.error("Download failed:", error);
+        // Fallback to direct linking if fetch fails
+        window.open(fileUrl, "_blank");
+      });
+  }, [type]);
+
   const renderTimeRemaining = (expiresAt: string) => {
     const now = new Date();
     const expiry = new Date(expiresAt);
@@ -284,11 +349,13 @@ export function RecentItems({ type, title, icon = <Clock className="h-5 w-5" /> 
                       </div>
                     </div>
                     <div className="flex items-center">
-                      <a href={`/api/files/${item.filePath}`} download>
-                        <Button size="sm" variant="ghost">
-                          <Download className="h-4 w-4" />
-                        </Button>
-                      </a>
+                      <Button 
+                        size="sm" 
+                        variant="ghost" 
+                        onClick={() => handleDownload(item)}
+                      >
+                        <Download className="h-4 w-4" />
+                      </Button>
                     </div>
                   </div>
                 );
