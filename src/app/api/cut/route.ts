@@ -2,32 +2,78 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { auth } from "~/server/auth";
 import path from "path";
-import { writeFile, mkdir, unlink, readdir, readFile } from "fs/promises";
-import { exec } from "child_process";
-import { promisify } from "util";
+import { writeFile, mkdir, unlink } from "fs/promises";
 import { v4 as uuidv4 } from "uuid";
 import { db } from "~/server/db";
 import os from "os";
 import fs from "fs";
+import { exec } from "child_process";
+import { promisify } from "util";
 import { 
   uploadFile, 
   getPublicUrl,
   STORAGE_BUCKETS,
   downloadFile,
   listFiles,
-  supabase 
+  supabase,
 } from "~/server/config/supabase-storage";
-import { join } from "path";
 
 const execPromise = promisify(exec);
 
-// Configure the API route
 export const config = {
   api: {
     responseLimit: false,
   },
+  // Maximum duration allowed on Vercel free tier
   maxDuration: 60, // 60 seconds (Vercel free tier limit)
 };
+
+/**
+ * Clean up chunk files from Supabase storage
+ */
+async function cleanupChunks(prefix: string) {
+  try {
+    console.log(`Cleaning up chunks from ${prefix}...`);
+    
+    // List all chunks
+    const chunkFiles = await listFiles(STORAGE_BUCKETS.TEMP, prefix);
+    
+    if (chunkFiles.length === 0) {
+      console.log(`No chunks found in ${prefix}`);
+      return;
+    }
+    
+    console.log(`Found ${chunkFiles.length} chunks to clean up`);
+    
+    // Delete each chunk individually
+    for (const chunkFile of chunkFiles) {
+      if (!chunkFile.id.endsWith('/')) {
+        const chunkPath = `${prefix}/${chunkFile.name}`;
+        console.log(`Deleting chunk: ${chunkPath}`);
+        
+        await supabase.storage
+          .from(STORAGE_BUCKETS.TEMP)
+          .remove([chunkPath]);
+      }
+    }
+    
+    // Try to remove the parent folder if possible
+    try {
+      await supabase.storage
+        .from(STORAGE_BUCKETS.TEMP)
+        .remove([prefix]);
+    } catch (err) {
+      // Folder deletion might fail if it's not empty or doesn't exist,
+      // which is fine since we've already deleted the individual files
+      console.log(`Note: Could not delete parent folder ${prefix}`, err);
+    }
+    
+    console.log(`Successfully cleaned up chunks from ${prefix}`);
+  } catch (err) {
+    console.error(`Error cleaning up chunks from ${prefix}:`, err);
+    // Log but don't throw - we don't want chunk cleanup to cause the main operation to fail
+  }
+}
 
 export async function POST(req: NextRequest) {
     const session = await auth();
@@ -163,14 +209,14 @@ export async function POST(req: NextRequest) {
 
         await execPromise(ffmpegCmd);
 
+        // Read the output file
+        const outputBuffer = await fs.promises.readFile(outputPath);
+
         // Define storage path in Supabase based on user session
         const storagePath = session?.user?.id 
             ? `${session.user.id}/${processId}${fileExt}`
             : `anonymous/${processId.substring(0, 8)}/${processId}${fileExt}`;
 
-        // Read the output file
-        const outputBuffer = await fs.promises.readFile(outputPath);
-        
         // Upload the cut file to Supabase storage
         await uploadFile(
             STORAGE_BUCKETS.CUTS,
@@ -196,21 +242,8 @@ export async function POST(req: NextRequest) {
             const userDir = session?.user?.id ? session.user.id : "anonymous";
             const chunkPrefix = `chunks/${userDir}/${fileId}`;
             
-            try {
-                // List all chunks
-                const chunkFiles = await listFiles(STORAGE_BUCKETS.TEMP, chunkPrefix);
-                
-                // Delete each chunk
-                for (const chunkFile of chunkFiles) {
-                    if (!chunkFile.id.endsWith('/')) {
-                        await supabase.storage
-                            .from(STORAGE_BUCKETS.TEMP)
-                            .remove([`${chunkPrefix}/${chunkFile.name}`]);
-                    }
-                }
-            } catch (err) {
-                console.error("Error cleaning up chunk files from Supabase:", err);
-            }
+            // Use our enhanced cleanup function
+            await cleanupChunks(chunkPrefix);
         }
 
         // Set expiration time to 6 hours from now
@@ -248,6 +281,18 @@ export async function POST(req: NextRequest) {
     catch (error) 
     {
         console.error("Video cutting error: ", error);
+        
+        // Even if processing failed, try to clean up chunks if we have enough info
+        if (contentType?.includes("application/json") && fileId) {
+            try {
+                const userDir = session?.user?.id ? session.user.id : "anonymous";
+                const chunkPrefix = `chunks/${userDir}/${fileId}`;
+                await cleanupChunks(chunkPrefix);
+            } catch (cleanupError) {
+                console.error("Failed to clean up chunks after error:", cleanupError);
+            }
+        }
+        
         return NextResponse.json({ 
             error: "Video cutting failed",
             details: error instanceof Error ? error.message : String(error)

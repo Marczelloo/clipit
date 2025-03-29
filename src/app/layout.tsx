@@ -6,6 +6,9 @@ import { Providers } from "~/components/providers";
 import { NavigationBar } from "~/components/navigation-bar";
 import { Footer } from "~/components/footer";
 import { auth } from "~/server/auth";
+import { Analytics } from "@vercel/analytics/react"
+import { SpeedInsights } from "@vercel/speed-insights/next"
+
 
 // Server initialization
 import { initializeServer } from "~/server/init";
@@ -49,6 +52,8 @@ export default async function RootLayout({
             </div>
           </TRPCReactProvider>
         </Providers>
+        <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );
