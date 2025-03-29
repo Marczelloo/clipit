@@ -12,14 +12,14 @@ import fs from "fs";
 import { 
   uploadFile, 
   getPublicUrl,
-  STORAGE_BUCKETS 
+  STORAGE_BUCKETS,
+  downloadFile,
+  listFiles,
+  supabase 
 } from "~/server/config/supabase-storage";
 import { join } from "path";
 
 const execPromise = promisify(exec);
-
-// Temporary directory for storing chunk files
-const TEMP_CHUNKS_DIR = join(os.tmpdir(), 'clipit-chunks');
 
 // Configure the API route
 export const config = {
@@ -67,37 +67,52 @@ export async function POST(req: NextRequest) {
                 return NextResponse.json({ error: "Invalid start or end time" }, { status: 400 });
             }
             
-            // Build path to user's chunk directory for this file
+            // Build path to user's chunk directory in Supabase storage
             const userDir = session?.user?.id ? session.user.id : "anonymous";
-            const userChunkDir = join(TEMP_CHUNKS_DIR, userDir, fileId);
+            const chunkPrefix = `chunks/${userDir}/${fileId}`;
+            console.log(`Processing chunked upload from Supabase in directory: ${chunkPrefix}`);
             
-            // Check if directory exists
             try {
-                await fs.promises.access(userChunkDir);
+                // List all chunks from Supabase storage
+                const chunkFiles = await listFiles(STORAGE_BUCKETS.TEMP, chunkPrefix);
+                
+                if (chunkFiles.length === 0) {
+                    return NextResponse.json({ error: "No chunks found in storage" }, { status: 400 });
+                }
+                
+                // Create temp directory to store chunks while processing
+                const tempProcessingDir = path.join(os.tmpdir(), 'clipit-processing', uuidv4());
+                await mkdir(tempProcessingDir, { recursive: true });
+                
+                // Sort chunk files by index for proper ordering
+                const sortedChunks = chunkFiles.filter(file => !file.id.endsWith('/')).sort((a, b) => {
+                    // Extract the chunk index from the filename
+                    const indexA = parseInt(a.name.split('-')[1]);
+                    const indexB = parseInt(b.name.split('-')[1]);
+                    return indexA - indexB;
+                });
+                
+                // Download and combine all chunks
+                completeFileBuffer = Buffer.alloc(0);
+                
+                for (const chunkFile of sortedChunks) {
+                    const chunkPath = `${chunkPrefix}/${chunkFile.name}`;
+                    const chunkData = await downloadFile(STORAGE_BUCKETS.TEMP, chunkPath);
+                    
+                    // Convert blob to buffer
+                    const arrayBuffer = await chunkData.arrayBuffer();
+                    const buffer = Buffer.from(arrayBuffer);
+                    
+                    completeFileBuffer = Buffer.concat([completeFileBuffer, buffer]);
+                }
+                
+                console.log(`Successfully combined ${sortedChunks.length} chunks into buffer of size ${completeFileBuffer.length}`);
             } catch (err) {
-                return NextResponse.json({ error: "No uploaded chunks found" }, { status: 404 });
-            }
-            
-            // Read all chunks from the temp directory
-            const chunkFiles = await readdir(userChunkDir);
-            
-            if (chunkFiles.length === 0) {
-                return NextResponse.json({ error: "No chunks found" }, { status: 400 });
-            }
-            
-            // Sort chunk files by index for proper ordering
-            chunkFiles.sort((a, b) => {
-                const indexA = parseInt(a.split('-')[1]);
-                const indexB = parseInt(b.split('-')[1]);
-                return indexA - indexB;
-            });
-            
-            // Combine all chunks into one buffer
-            completeFileBuffer = Buffer.alloc(0);
-            for (const chunkFile of chunkFiles) {
-                const chunkPath = join(userChunkDir, chunkFile);
-                const chunkData = await readFile(chunkPath);
-                completeFileBuffer = Buffer.concat([completeFileBuffer, chunkData]);
+                console.error("Error retrieving chunks from Supabase:", err);
+                return NextResponse.json({ 
+                    error: "Failed to retrieve uploaded chunks", 
+                    details: err instanceof Error ? err.message : String(err) 
+                }, { status: 500 });
             }
         } else {
             // Handle legacy direct upload
@@ -177,14 +192,24 @@ export async function POST(req: NextRequest) {
         await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {});
         
         // Clean up chunk files if this was a chunked upload
-        if (contentType.includes("application/json") && session?.user?.id && fileId) {
-            const userDir = session.user.id;
-            const userChunkDir = join(TEMP_CHUNKS_DIR, userDir, fileId);
+        if (contentType.includes("application/json") && fileId) {
+            const userDir = session?.user?.id ? session.user.id : "anonymous";
+            const chunkPrefix = `chunks/${userDir}/${fileId}`;
             
             try {
-                await fs.promises.rm(userChunkDir, { recursive: true, force: true });
+                // List all chunks
+                const chunkFiles = await listFiles(STORAGE_BUCKETS.TEMP, chunkPrefix);
+                
+                // Delete each chunk
+                for (const chunkFile of chunkFiles) {
+                    if (!chunkFile.id.endsWith('/')) {
+                        await supabase.storage
+                            .from(STORAGE_BUCKETS.TEMP)
+                            .remove([`${chunkPrefix}/${chunkFile.name}`]);
+                    }
+                }
             } catch (err) {
-                console.error("Error cleaning up chunk files:", err);
+                console.error("Error cleaning up chunk files from Supabase:", err);
             }
         }
 

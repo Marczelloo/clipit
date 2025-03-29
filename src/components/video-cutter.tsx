@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useEffect, useState } from "react";
 import { Button } from "~/components/ui/button";
 import { Play, Pause } from "lucide-react";
 
@@ -33,10 +33,62 @@ export function VideoCutter({
   isPlaying,
   setStartTime,
   setEndTime,
+  setCurrentTime,
   setIsPlaying,
   onVideoLoaded
 }: VideoCutterProps) {
   const timelineRef = useRef<HTMLDivElement>(null);
+  const animationFrameRef = useRef<number | null>(null);
+
+  // More precise playhead tracking using requestAnimationFrame
+  useEffect(() => {
+    const videoElement = videoRef.current;
+    if (!videoElement) return;
+
+    // Track video time with high precision using animation frame
+    const updatePlayhead = () => {
+      if (videoElement && !videoElement.paused) {
+        const currentVideoTime = videoElement.currentTime;
+        setCurrentTime(currentVideoTime);
+        
+        // Check if we've reached the end time
+        if (currentVideoTime >= endTime) {
+          videoElement.pause();
+          videoElement.currentTime = startTime;
+          setIsPlaying(false);
+        }
+      }
+      
+      // Continue the animation loop only if playing
+      if (isPlaying) {
+        animationFrameRef.current = requestAnimationFrame(updatePlayhead);
+      }
+    };
+
+    // Start or stop the animation frame based on play state
+    if (isPlaying) {
+      animationFrameRef.current = requestAnimationFrame(updatePlayhead);
+    } else if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+    }
+
+    // Handle natural video end
+    const handleEnded = () => {
+      setIsPlaying(false);
+      videoElement.currentTime = startTime;
+    };
+
+    // Add event listener for end of video
+    videoElement.addEventListener('ended', handleEnded);
+
+    // Clean up
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+      videoElement.removeEventListener('ended', handleEnded);
+    };
+  }, [isPlaying, videoRef, startTime, endTime, setCurrentTime, setIsPlaying]);
 
   // Format time as MM:SS
   const formatTime = (seconds: number) => {
@@ -55,6 +107,7 @@ export function VideoCutter({
     
     if (newTime >= 0 && newTime <= duration) {
       videoRef.current.currentTime = newTime;
+      setCurrentTime(newTime);
     }
   };
 
@@ -76,12 +129,21 @@ export function VideoCutter({
     if (!videoRef.current) return;
     
     videoRef.current.currentTime = startTime;
+    setCurrentTime(startTime);
+    
     videoRef.current.play()
       .then(() => setIsPlaying(true))
       .catch(error => {
         console.error("Error playing video:", error);
         setIsPlaying(false);
       });
+  };
+
+  // Calculate playhead position with higher precision
+  const getPlayheadPosition = () => {
+    if (duration <= 0) return 0;
+    const position = (currentTime / duration) * 100;
+    return `${Math.max(0, Math.min(100, position))}%`;
   };
 
   return (
@@ -177,6 +239,7 @@ export function VideoCutter({
                       setStartTime(newStartTime);
                       if (videoRef.current) {
                         videoRef.current.currentTime = newStartTime;
+                        setCurrentTime(newStartTime);
                       }
                     }
                   };
@@ -216,6 +279,7 @@ export function VideoCutter({
                       setEndTime(newEndTime);
                       if (videoRef.current) {
                         videoRef.current.currentTime = newEndTime;
+                        setCurrentTime(newEndTime);
                       }
                     }
                   };
@@ -237,12 +301,13 @@ export function VideoCutter({
                 </div>
               </div>
               
-              {/* Playhead */}
+              {/* Playhead - with improved positioning */}
               <div 
                 className="absolute top-0 h-full w-0.5 bg-red-500 pointer-events-none"
                 style={{ 
-                  left: `${(currentTime / duration) * 100}%`,
-                  display: duration > 0 ? 'block' : 'none'
+                  left: getPlayheadPosition(),
+                  display: duration > 0 ? 'block' : 'none',
+                  boxShadow: '0 0 3px rgba(255, 0, 0, 0.8)'
                 }}
               />
             </div>
@@ -252,6 +317,11 @@ export function VideoCutter({
           <div className="flex justify-between mt-2">
             <span className="text-sm font-medium">Start: {formatTime(startTime)}</span>
             <span className="text-sm font-medium">End: {formatTime(endTime)}</span>
+          </div>
+          
+          {/* Current time indicator */}
+          <div className="text-center text-sm">
+            Current: {formatTime(currentTime)}
           </div>
           
           {/* Duration indicator */}

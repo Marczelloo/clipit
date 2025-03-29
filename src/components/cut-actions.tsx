@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { Button } from "~/components/ui/button";
 import { ScissorsLineDashed, Download } from "lucide-react";
+import { useToast } from "~/hooks/use-toast";
 
 interface CutActionsProps {
   isProcessing: boolean;
@@ -18,6 +20,58 @@ export function CutActions({
   fileName,
   progress = 0
 }: CutActionsProps) {
+  const [isDownloading, setIsDownloading] = useState(false);
+  const { toast } = useToast();
+
+  const handleDownload = async () => {
+    if (!cutUrl) return;
+    
+    try {
+      setIsDownloading(true);
+      
+      // Get the file extension from the URL or fallback to mp4
+      const fileExtension = cutUrl.split('.').pop() || 'mp4';
+      const downloadName = `cut_${fileName || 'video'}.${fileExtension}`;
+      
+      // Fetch the file as a blob
+      const response = await fetch(cutUrl);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to download: ${response.statusText}`);
+      }
+      
+      const blob = await response.blob();
+      
+      // Create a blob URL and trigger download
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = downloadName;
+      document.body.appendChild(a);
+      a.click();
+      
+      // Clean up
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(blobUrl);
+      }, 100);
+      
+      toast({
+        title: "Download started",
+        description: `Downloading ${downloadName}`,
+      });
+    } catch (error) {
+      console.error("Download error:", error);
+      toast({
+        title: "Download failed",
+        description: error instanceof Error ? error.message : "Failed to download video",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+  
   return (
     <div className="space-y-4">
       {isProcessing && (
@@ -44,20 +98,11 @@ export function CutActions({
         </Button>
         <Button 
           variant="secondary" 
-          disabled={!cutUrl}
-          onClick={() => {
-            if (!cutUrl) return;
-            
-            // Create an anchor element to force download
-            const a = document.createElement('a');
-            a.href = cutUrl;
-            a.download = `cut_${fileName ?? 'video'}`; // Set filename
-            document.body.appendChild(a);
-            a.click(); // Trigger download
-            document.body.removeChild(a); // Clean up
-          }}
+          disabled={!cutUrl || isDownloading}
+          onClick={handleDownload}
         >
-          <Download className="h-4 w-4 mr-2" /> Download
+          <Download className="h-4 w-4 mr-2" /> 
+          {isDownloading ? "Downloading..." : "Download"}
         </Button>
       </div>
     </div>

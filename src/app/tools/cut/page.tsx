@@ -35,6 +35,12 @@ export default function CutPage() {
   const [progress, setProgress] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
   const { toast } = useToast();
+  
+  // Handle video selection
+  const handleVideoSelected = (file: File, url: string) => {
+    setVideo(file);
+    setVideoUrl(url);
+  };
 
   // Initialize chunked upload hook
   const { uploadFile, progress: uploadProgress } = useChunkedUpload({
@@ -58,8 +64,12 @@ export default function CutPage() {
   }, []);
 
   const generateThumbnails = useCallback(async () => {
-    if (!videoRef.current || duration === 0) return;
+    if (!videoRef.current || !videoRef.current.duration) {
+      console.log("Cannot generate thumbnails: video not ready or duration is 0");
+      return;
+    }
 
+    const videoDuration = videoRef.current.duration;
     setIsGeneratingThumbnails(true);
     const video = videoRef.current;
     const canvas = document.createElement('canvas');
@@ -77,7 +87,7 @@ export default function CutPage() {
       const originalTime = video.currentTime;
 
       for (let i = 0; i < thumbnailCount; i++) {
-        const timePoint = (duration / thumbnailCount) * i;
+        const timePoint = (videoDuration / thumbnailCount) * i;
         console.log(`Generating thumbnail at time: ${timePoint}`);
         video.currentTime = timePoint;
 
@@ -109,7 +119,22 @@ export default function CutPage() {
     } finally {
       setIsGeneratingThumbnails(false);
     }
-  }, [duration]);
+  }, []);
+
+  // Handler for video loaded metadata event
+  const handleVideoLoaded = useCallback(async () => {
+    if (!videoRef.current) return;
+    
+    const videoDuration = videoRef.current.duration;
+    console.log(`Video loaded with duration: ${videoDuration}`);
+    
+    // Update state with video duration
+    setDuration(videoDuration);
+    setEndTime(videoDuration);
+    
+    // Now generate thumbnails
+    await generateThumbnails();
+  }, [generateThumbnails]);
 
   const handleCut = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
@@ -218,7 +243,7 @@ export default function CutPage() {
       </div>
 
       {!videoUrl ? (
-        <VideoUploader onVideoSelected={setVideo} />
+        <VideoUploader onVideoSelected={handleVideoSelected} />
       ) : (
         <div className="space-y-8">
           <VideoCutter
@@ -235,7 +260,7 @@ export default function CutPage() {
             setEndTime={setEndTime}
             setCurrentTime={setCurrentTime}
             setIsPlaying={setIsPlaying}
-            onVideoLoaded={generateThumbnails}
+            onVideoLoaded={handleVideoLoaded}
           />
           
           <CutActions
